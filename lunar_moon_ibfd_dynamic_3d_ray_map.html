@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lunar Moon IBFD & Cognitive RF Architecture</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js r128 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            lunar: {
+              950: '#030712',
+              900: '#0b1120',
+              850: '#0f172a',
+              800: '#1e293b',
+              accent: '#38bdf8',
+              teal: '#14b8a6',
+              emerald: '#10b981',
+              amber: '#f59e0b',
+              rose: '#f43f5e'
+            }
+          },
+          fontFamily: {
+            mono: ['JetBrains Mono', 'Menlo', 'Courier New', 'monospace'],
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #030712;
+      color: #e2e8f0;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      user-select: none;
+    }
+    #viewport-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      z-index: 1;
+    }
+    .hud-panel {
+      background: rgba(11, 17, 32, 0.82);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.7);
+    }
+    .hud-chip {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+    }
+    .hud-chip:hover {
+      background: rgba(56, 189, 248, 0.1);
+      border-color: rgba(56, 189, 248, 0.35);
+    }
+    .panel-collapsed-left {
+      transform: translateX(-105%);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .panel-collapsed-right {
+      transform: translateX(105%);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .panel-transition {
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    /* Subtle custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 4px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(56, 189, 248, 0.4);
+    }
+  </style>
+</head>
+<body class="relative w-full h-full">
+
+  <canvas id="viewport-canvas"></canvas>
+
+  <!-- Interactive HUD Overlay Container -->
+  <div class="relative z-10 w-full h-full pointer-events-none flex flex-col justify-between p-3 md:p-5 overflow-hidden">
+    
+    <!-- Top Header & Global Controls -->
+    <header class="pointer-events-auto flex items-center justify-between gap-3 hud-panel rounded-2xl px-4 py-2.5 max-w-full">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-xl bg-sky-500/10 border border-sky-400/30 flex items-center justify-center text-sky-400">
+          <i class="fa-solid fa-satellite-dish text-sm"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-sm font-semibold tracking-wide text-slate-100 uppercase">
+              LUNAR-NET <span class="text-sky-400 text-[11px] font-mono px-1.5 py-0.5 rounded bg-sky-950/80 border border-sky-500/25">IBFD RF MESH</span>
+            </h1>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-950/70 text-emerald-400 border border-emerald-500/25">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span>112.8 dB Suppression
+            </span>
+          </div>
+          <p class="text-[11px] text-slate-400 hidden md:block">Interactive 3D Ray-Trace • In-Band Full-Duplex • Neuromorphic SNN • Direct-RF Beamforming</p>
+        </div>
+      </div>
+
+      <!-- Quick Action Controls -->
+      <div class="flex items-center gap-2 text-xs">
+        <button id="btn-toggle-left" class="px-2.5 py-1.5 rounded-lg hud-chip text-slate-300 hover:text-white transition flex items-center gap-1.5" title="Toggle Modules">
+          <i class="fa-solid fa-bars text-xs text-sky-400"></i>
+          <span class="hidden sm:inline">Modules</span>
+        </button>
+
+        <button id="btn-toggle-rays" class="px-2.5 py-1.5 rounded-lg hud-chip text-slate-300 hover:text-white transition flex items-center gap-1.5" title="Pulse Speed">
+          <i class="fa-solid fa-wave-square text-xs text-emerald-400"></i>
+          <span class="hidden sm:inline">Pulse Flow</span>
+        </button>
+
+        <button id="btn-inject-noise" class="px-2.5 py-1.5 rounded-lg hud-chip text-rose-300 hover:text-rose-200 transition flex items-center gap-1.5">
+          <i class="fa-solid fa-radiation text-xs text-rose-400"></i>
+          <span>Jammer</span>
+        </button>
+
+        <button id="btn-toggle-right" class="px-2.5 py-1.5 rounded-lg hud-chip text-slate-300 hover:text-white transition flex items-center gap-1.5" title="Toggle Dossier">
+          <span class="hidden sm:inline">Dossier</span>
+          <i class="fa-solid fa-circle-info text-xs text-sky-400"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Middle Workspace: Left Sidebar, Viewport Toolset, Right Dossier -->
+    <div class="flex-1 flex justify-between items-center my-3 overflow-hidden gap-3">
+      
+      <!-- Left Column: Module Selection & DSP Scope -->
+      <aside id="panel-left" class="pointer-events-auto panel-transition w-72 md:w-80 flex flex-col gap-2.5 max-h-full overflow-y-auto">
+        
+        <!-- Modules List -->
+        <div class="hud-panel rounded-2xl p-3 text-xs">
+          <div class="text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+            <span>Lunar Architectural Nodes</span>
+            <span class="text-sky-400 font-bold">5 SITES</span>
+          </div>
+          <div class="space-y-1.5" id="tech-list">
+            <!-- Populated via JavaScript -->
+          </div>
+        </div>
+
+        <!-- Real-Time Waveform / DSP Spectrum Card -->
+        <div class="hud-panel rounded-2xl p-3 text-xs flex flex-col gap-2">
+          <div class="flex items-center justify-between font-mono text-[11px] text-slate-400">
+            <span>IBFD DIGITAL CANCELLATION</span>
+            <span id="cancellation-stat" class="text-emerald-400 font-bold">-112.8 dB</span>
+          </div>
+          <div class="relative w-full h-20 rounded-xl bg-slate-950/90 border border-white/5 overflow-hidden">
+            <canvas id="scope-canvas" class="w-full h-full"></canvas>
+            <div class="absolute bottom-1 left-2 text-[9px] font-mono flex gap-3 text-slate-400">
+              <span class="text-rose-400/90">● TX Leak</span>
+              <span class="text-sky-400/90">● Volterra Model</span>
+              <span class="text-emerald-400 font-bold">● Science RX</span>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-[10px] font-mono">
+            <div class="hud-chip p-2 rounded-lg">
+              <div class="text-slate-400">DSP Latency</div>
+              <div class="text-sky-300 font-bold" id="dsp-latency">14.2 μs</div>
+            </div>
+            <div class="hud-chip p-2 rounded-lg">
+              <div class="text-slate-400">SNN Power</div>
+              <div class="text-emerald-300 font-bold" id="snn-power">380 mW</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center Floating On-Screen Camera / Zoom Controls -->
+      <div class="pointer-events-auto flex flex-col gap-1.5 hud-panel rounded-xl p-1.5 self-center">
+        <button id="btn-zoom-in" class="w-8 h-8 rounded-lg hud-chip flex items-center justify-center text-slate-300 hover:text-white" title="Zoom In">
+          <i class="fa-solid fa-plus text-xs"></i>
+        </button>
+        <button id="btn-zoom-out" class="w-8 h-8 rounded-lg hud-chip flex items-center justify-center text-slate-300 hover:text-white" title="Zoom Out">
+          <i class="fa-solid fa-minus text-xs"></i>
+        </button>
+        <button id="btn-reset-view" class="w-8 h-8 rounded-lg hud-chip flex items-center justify-center text-slate-300 hover:text-white" title="Reset Orbit">
+          <i class="fa-solid fa-arrows-rotate text-xs"></i>
+        </button>
+      </div>
+
+      <!-- Right Column: Architectural Dossier -->
+      <aside id="panel-right" class="pointer-events-auto panel-transition w-80 md:w-96 flex flex-col max-h-full overflow-y-auto hud-panel rounded-2xl p-4">
+        <div class="flex items-center justify-between pb-2.5 border-b border-white/5 mb-3">
+          <div class="flex items-center gap-2">
+            <span id="dossier-category" class="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-500/20">Hardware & Architecture</span>
+            <span id="dossier-id" class="text-slate-500 font-mono text-[11px]">TECH #5</span>
+          </div>
+          <button id="btn-minimize-dossier" class="text-slate-400 hover:text-white text-xs p-1">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <h2 id="dossier-title" class="text-sm md:text-base font-semibold text-slate-100 mb-1 leading-snug">In-Band Full-Duplex (IBFD) Cancellation</h2>
+        <div id="dossier-tagline" class="text-xs text-sky-400/90 font-mono mb-3">Adaptive Volterra DSP • >110 dB Digital Suppression</div>
+
+        <div class="space-y-2.5 text-xs text-slate-300">
+          <div>
+            <h4 class="text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+              <i class="fa-solid fa-microchip text-sky-400"></i> Algorithmic Description
+            </h4>
+            <p id="dossier-desc" class="p-2.5 rounded-xl hud-chip leading-relaxed text-slate-200">
+              The software is an adaptive DSP cancellation layer that mathematically reconstructs and subtracts a radio's own transmission leakage in real time, enabling simultaneous transmission and reception on the exact same frequency.
+            </p>
+          </div>
+
+          <div>
+            <h4 class="text-[10px] font-mono text-emerald-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+              <i class="fa-solid fa-atom text-emerald-400"></i> Technical Novelty
+            </h4>
+            <p id="dossier-novelty" class="p-2.5 rounded-xl bg-emerald-950/20 border border-emerald-500/15 leading-relaxed text-slate-200">
+              Its novelty is achieving over 110 dB of digital self-interference suppression via nonlinear Volterra filtering, which NASA bypassed due to historical reliance on heavy physical diplexers.
+            </p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div class="p-2 rounded-xl hud-chip">
+              <div class="text-[10px] font-mono text-slate-400 flex items-center gap-1">
+                <i class="fa-solid fa-rocket text-sky-400"></i> Space Impact
+              </div>
+              <p id="dossier-space" class="text-[11px] text-slate-300 mt-1 leading-normal">
+                Doubles science downlink throughput for resource-constrained deep-space probes while halving RF front-end diplexer mass.
+              </p>
+            </div>
+            <div class="p-2 rounded-xl hud-chip">
+              <div class="text-[10px] font-mono text-slate-400 flex items-center gap-1">
+                <i class="fa-solid fa-shield-halved text-emerald-400"></i> Public Safety
+              </div>
+              <p id="dossier-safety" class="text-[11px] text-slate-300 mt-1 leading-normal">
+                Eliminates paired uplink/downlink splits, enabling emergency personnel to communicate without repeater turnaround delays.
+              </p>
+            </div>
+          </div>
+
+          <div class="p-2.5 rounded-xl bg-amber-950/15 border border-amber-500/15">
+            <div class="text-[10px] font-mono text-amber-300 flex items-center justify-between mb-1">
+              <span>Budget & Schedule:</span>
+              <span id="dossier-cost" class="font-semibold text-amber-200">$4.5M – $5.8M (24 Mo)</span>
+            </div>
+            <p id="dossier-blocker" class="text-[11px] text-slate-300 italic mt-1 leading-normal">
+              Telecom contractors protected lucrative duplexer and repeater component businesses rather than investing in disruptive digital-cancellation software.
+            </p>
+          </div>
+        </div>
+
+        <div class="mt-3 pt-2.5 border-t border-white/5 flex gap-2">
+          <button id="btn-focus-site" class="flex-1 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-sm">
+            <i class="fa-solid fa-crosshairs"></i> Center On Node
+          </button>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Bottom Footer: Telemetry & Ray Controls -->
+    <footer class="pointer-events-auto hud-panel rounded-2xl px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+      <div class="flex items-center gap-3">
+        <span class="text-slate-400 font-mono text-[11px] flex items-center gap-1.5">
+          <i class="fa-solid fa-circle-notch text-sky-400 animate-spin"></i> Active Rays:
+        </span>
+        <label class="flex items-center gap-1 text-[11px] text-slate-300 cursor-pointer">
+          <input type="checkbox" id="chk-sat-links" checked class="accent-sky-500 rounded">
+          <span>Relay Uplinks</span>
+        </label>
+        <label class="flex items-center gap-1 text-[11px] text-slate-300 cursor-pointer">
+          <input type="checkbox" id="chk-mesh-links" checked class="accent-emerald-500 rounded">
+          <span>Inter-Node Mesh</span>
+        </label>
+      </div>
+
+      <div class="flex items-center gap-3 font-mono text-[11px] text-slate-400">
+        <div>LAT: <span id="telemetry-lat" class="text-slate-200">0.0°</span></div>
+        <div>LON: <span id="telemetry-lon" class="text-slate-200">0.0°</span></div>
+        <div>DIST: <span id="telemetry-alt" class="text-sky-300">2,600 km</span></div>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    /* Architectural Data for 5 Core Innovations */
+    const LUNAR_TECH_MODULES = [
+      {
+        id: "TECH-01",
+        num: 5,
+        name: "In-Band Full-Duplex (IBFD) Cancellation Layer",
+        short: "IBFD Full-Duplex Cancellation",
+        category: "Hardware & Architecture",
+        color: "#38bdf8",
+        rayColor: 0x38bdf8,
+        lunarSite: "Shackleton Crater (South Pole)",
+        lat: -78.0,
+        lon: 10.0,
+        tagline: "Adaptive Volterra Filtering • >110 dB Digital Suppression",
+        desc: "The software is an adaptive DSP cancellation layer that mathematically reconstructs and subtracts a radio's own transmission leakage in real time, enabling simultaneous transmission and reception on the exact same frequency.",
+        novelty: "Its novelty is achieving over 110 dB of digital self-interference suppression via nonlinear Volterra filtering, which NASA bypassed due to historical reliance on heavy physical diplexers.",
+        budget: "$4.5M – $5.8M over 24 months",
+        spaceImpact: "It doubles science downlink throughput for resource-constrained deep-space probes while halving the mass and volume of RF front-end diplexers.",
+        publicSafety: "It eliminates the need for paired uplink/downlink public safety frequency splits, allowing emergency personnel to communicate without repeater turnaround delays.",
+        blocker: "Telecom contractors protected lucrative duplexer and repeater component businesses rather than investing in disruptive digital-cancellation software."
+      },
+      {
+        id: "TECH-02",
+        num: 6,
+        name: "Low-SWaP Neuromorphic SNN Signal Classifier",
+        short: "Neuromorphic SNN Classifier",
+        category: "Cognitive PHY & Waveforms",
+        color: "#a78bfa",
+        rayColor: 0xa78bfa,
+        lunarSite: "Malapert Uplink Mountain",
+        lat: -48.0,
+        lon: 55.0,
+        tagline: "Sub-500mW Microsecond Spike Timing Signal ID",
+        desc: "The software is an ultra-low-power neuromorphic spiking neural network algorithm designed to detect and classify complex emitter signals in microseconds consuming under 500 milliwatts.",
+        novelty: "Its novelty is microsecond signal identification using event-driven spike timing, which NASA missed due to lack of space-qualified neuromorphic compute hardware on earlier missions.",
+        budget: "$4.0M – $5.2M over 22 months",
+        spaceImpact: "It enables autonomous deep-space probes to detect and lock onto faint unknown radio beacons during interstellar rendezvous without ground guidance.",
+        publicSafety: "It allows battery-operated paramedic handhelds to run continuous background spectrum surveillance without draining vital shift battery life.",
+        blocker: "Vendors relied on power-hungry traditional DSP FFT processing and chose to preserve multi-decade battery management routines."
+      },
+      {
+        id: "TECH-03",
+        num: 7,
+        name: "Autonomous Direct-RF Beamformer & Null-Steerer",
+        short: "Direct-RF Beamformer & Nuller",
+        category: "Antennas & Beamforming",
+        color: "#34d399",
+        rayColor: 0x34d399,
+        lunarSite: "Oceanus Procellarum Radio Array",
+        lat: 18.0,
+        lon: -55.0,
+        tagline: "Direct-RF Spatial Amplitude & Phase Null-Steering",
+        desc: "The software is a digital beamforming engine that dynamically computes spatial phase and amplitude weights to steer antenna array nulls toward interference sources while locking directional beams onto friendly assets.",
+        novelty: "Its novelty is direct-RF digital processing without analog phase shifters, which NASA previously overlooked because space missions prioritized heavy parabolic mechanical gimbals.",
+        budget: "$5.4M – $6.8M over 28 months",
+        spaceImpact: "It allows planetary landers to track multiple high-speed descent rovers simultaneously while rejecting strong RF surface reflections.",
+        publicSafety: "It enables emergency command vehicles to communicate through heavy building rubble while mathematically nulling out nearby commercial broadcast noise.",
+        blocker: "Commercial vendors dismissed active beamforming as an expensive military radar specialty unnecessary for routine municipal dispatch."
+      },
+      {
+        id: "TECH-04",
+        num: 8,
+        name: "Doppler-Resilient Chirp Synthesizer",
+        short: "Doppler-Resilient Chirp PHY",
+        category: "Cognitive PHY & Waveforms",
+        color: "#fbbf24",
+        rayColor: 0xfbbf24,
+        lunarSite: "Tycho Crater High Pylon",
+        lat: -43.0,
+        lon: -11.0,
+        tagline: ">50 kHz/s De-Warping at Negative SNR Levels",
+        desc: "The software is an adaptive spread-spectrum chirp synthesizer that autonomously tracks and cancels extreme Doppler frequency shifts exceeding 50 kHz/second without dropping digital frame sync.",
+        novelty: "The novelty is continuous time-frequency chirp de-warping at negative SNR levels, which NASA missed by relying on massive ground station cryogenic receivers rather than autonomous edge avionics.",
+        budget: "$3.2M – $4.4M over 18 months",
+        spaceImpact: "It provides seamless telecommand links for low-Earth orbit CubeSat swarms and hypersonic re-entry capsules throughout high-acceleration flight phases.",
+        publicSafety: "It maintains mission-critical telemetry from emergency medical helicopters operating at extreme speeds and aggressive banking maneuvers in mountainous terrain.",
+        blocker: "Public safety standards bodies focus exclusively on terrestrial pedestrian or land-vehicle speeds under 100 mph, ignoring high-Doppler aerodynamics."
+      },
+      {
+        id: "TECH-05",
+        num: 9,
+        name: "Decentralized DLT Dynamic Spectrum Broker",
+        short: "Decentralized Spectrum (DSA) Broker",
+        category: "Cryptographic & Zero-Trust",
+        color: "#f87171",
+        rayColor: 0xf87171,
+        lunarSite: "Mare Tranquillitatis Gateway",
+        lat: 8.5,
+        lon: 31.4,
+        tagline: "Microsecond Zero-Trust Spectrum Clearance",
+        desc: "The software is a zero-trust, cryptographically verified smart contract broker that negotiates microsecond spectrum rights and priority preemption across multi-agency autonomous transceivers.",
+        novelty: "The novelty is millisecond-grade decentralized cryptographic spectrum clearance without central clearinghouses, which NASA missed due to centralized Deep Space Network scheduling conventions.",
+        budget: "$3.9M – $5.0M over 20 months",
+        spaceImpact: "It coordinates spectrum sharing between commercial lunar landers, international space agencies, and NASA science payloads on the lunar South Pole.",
+        publicSafety: "It allows mutual-aid responders (police, fire, EMS, National Guard) to dynamically share bandwidth during massive wildfires without administrative turf wars.",
+        blocker: "Telecom monopolists generate revenue by securing exclusive, proprietary municipal spectrum franchises rather than promoting open dynamic sharing RF."
+      }
+    ];
+
+    let currentSelectedModule = LUNAR_TECH_MODULES[0];
+    let jammerActive = false;
+  </script>
+
+  <script>
+    /* Three.js Scene Setup & Photorealistic Procedural Lunar Texture */
+    const canvas = document.getElementById('viewport-canvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x030712);
+
+    const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 0.8, 3.6);
+
+    // Deep space stars
+    const starCount = 1800;
+    const starGeo = new THREE.BufferGeometry();
+    const starPos = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount * 3; i += 3) {
+      const r = 200 + Math.random() * 150;
+      const u = Math.random();
+      const v = Math.random();
+      const theta = u * 2.0 * Math.PI;
+      const phi = Math.acos(2.0 * v - 1.0);
+      starPos[i] = r * Math.sin(phi) * Math.cos(theta);
+      starPos[i+1] = r * Math.sin(phi) * Math.sin(theta);
+      starPos[i+2] = r * Math.cos(phi);
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    const starMat = new THREE.PointsMaterial({ size: 1.1, color: 0x94a3b8, transparent: true, opacity: 0.7 });
+    scene.add(new THREE.Points(starGeo, starMat));
+
+    // Studio & Solar Lighting (Smooth Lunar Terminator)
+    const ambientLight = new THREE.AmbientLight(0x0f172a, 0.55);
+    scene.add(ambientLight);
+
+    const sunLight = new THREE.DirectionalLight(0xffffff, 2.0);
+    sunLight.position.set(5, 2, 4);
+    scene.add(sunLight);
+
+    const earthFillLight = new THREE.DirectionalLight(0x38bdf8, 0.25);
+    earthFillLight.position.set(-6, -2, -3);
+    scene.add(earthFillLight);
+
+    /* Generate Clean Procedural Lunar Texture Without Polar Distortion */
+    function generateCleanLunarTexture() {
+      const w = 1024;
+      const h = 512;
+      const cvs = document.createElement('canvas');
+      cvs.width = w;
+      cvs.height = h;
+      const ctx = cvs.getContext('2d');
+
+      // Soft neutral lunar regolith base
+      const grad = ctx.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, '#58616c');
+      grad.addColorStop(0.5, '#4b535d');
+      grad.addColorStop(1, '#3e454e');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      // Procedural basalt lunar maria (smooth organic shapes)
+      const maria = [
+        { x: 380, y: 220, rx: 110, ry: 70 },
+        { x: 500, y: 190, rx: 90, ry: 60 },
+        { x: 620, y: 260, rx: 130, ry: 80 },
+        { x: 300, y: 320, rx: 90, ry: 65 },
+        { x: 740, y: 210, rx: 80, ry: 50 }
+      ];
+
+      maria.forEach(m => {
+        const rad = ctx.createRadialGradient(m.x, m.y, 10, m.x, m.y, m.rx);
+        rad.addColorStop(0, 'rgba(28, 32, 38, 0.65)');
+        rad.addColorStop(0.6, 'rgba(38, 43, 50, 0.45)');
+        rad.addColorStop(1, 'rgba(75, 83, 93, 0)');
+        ctx.fillStyle = rad;
+        ctx.beginPath();
+        ctx.ellipse(m.x, m.y, m.rx, m.ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Subtle, clean crater rings with soft shadows (avoiding pole pinch)
+      for (let i = 0; i < 90; i++) {
+        const cx = Math.random() * w;
+        // Keep craters mostly between lat -70 and +70 to prevent polar UV pinch
+        const cy = 60 + Math.random() * (h - 120);
+        const r = 3 + Math.random() * 14;
+
+        // Rim highlight
+        ctx.strokeStyle = 'rgba(215, 225, 235, 0.28)';
+        ctx.lineWidth = 1.0;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Soft crater interior shadow
+        ctx.fillStyle = 'rgba(20, 24, 28, 0.25)';
+        ctx.beginPath();
+        ctx.arc(cx + 0.6, cy + 0.6, r * 0.75, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      const tex = new THREE.CanvasTexture(cvs);
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.ClampToEdgeWrapping;
+      return tex;
+    }
+
+    const cleanTexture = generateCleanLunarTexture();
+
+    // Lunar Sphere with smooth material
+    const moonRadius = 1.0;
+    const moonGeo = new THREE.SphereGeometry(moonRadius, 64, 64);
+    const moonMat = new THREE.MeshStandardMaterial({
+      map: cleanTexture,
+      roughness: 0.92,
+      metalness: 0.04
+    });
+    const moonMesh = new THREE.Mesh(moonGeo, moonMat);
+    scene.add(moonMesh);
+
+    // Subtle atmospheric glow outline
+    const glowGeo = new THREE.SphereGeometry(moonRadius * 1.015, 48, 48);
+    const glowMat = new THREE.ShaderMaterial({
+      vertexShader: `
+        varying vec3 vNormal;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vNormal;
+        void main() {
+          float intensity = pow(0.6 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 3.0);
+          gl_FragColor = vec4(0.22, 0.74, 0.97, 1.0) * intensity * 0.45;
+        }
+      `,
+      blending: THREE.AdditiveBlending,
+      side: THREE.BackSide,
+      transparent: true
+    });
+    const moonGlow = new THREE.Mesh(glowGeo, glowMat);
+    scene.add(moonGlow);
+
+    // Subtle coordinate lines
+    const gridGroup = new THREE.Group();
+    const latMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.07 });
+    for (let lat = -60; lat <= 60; lat += 30) {
+      const r = moonRadius * 1.002 * Math.cos(lat * Math.PI / 180);
+      const y = moonRadius * 1.002 * Math.sin(lat * Math.PI / 180);
+      const pts = [];
+      for (let s = 0; s <= 64; s++) {
+        const th = (s / 64) * Math.PI * 2;
+        pts.push(new THREE.Vector3(Math.cos(th) * r, y, Math.sin(th) * r));
+      }
+      gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), latMat));
+    }
+    moonMesh.add(gridGroup);
+  </script>
+
+  <script>
+    /* Elegant Lightweight Nodes, Satellites & Fine Rays */
+    const interactiveObjects = [];
+    const stationNodes = [];
+    const rayBundles = [];
+
+    function latLonToVector3(lat, lon, r = 1.0) {
+      const phi = (90 - lat) * (Math.PI / 180);
+      const theta = (lon + 180) * (Math.PI / 180);
+      const x = -(r * Math.sin(phi) * Math.cos(theta));
+      const z = (r * Math.sin(phi) * Math.sin(theta));
+      const y = (r * Math.cos(phi));
+      return new THREE.Vector3(x, y, z);
+    }
+
+    // Build Minimalist Aesthetic Nodes
+    LUNAR_TECH_MODULES.forEach((mod, idx) => {
+      const surfacePos = latLonToVector3(mod.lat, mod.lon, moonRadius * 1.004);
+
+      const nodeGroup = new THREE.Group();
+      nodeGroup.position.copy(surfacePos);
+      nodeGroup.lookAt(surfacePos.clone().multiplyScalar(2));
+
+      // Delicate Station Beacon (Thin needle pin & luminous head)
+      const pinGeo = new THREE.CylinderGeometry(0.003, 0.003, 0.04, 8);
+      const pinMat = new THREE.MeshBasicMaterial({ color: 0x94a3b8 });
+      const pinMesh = new THREE.Mesh(pinGeo, pinMat);
+      pinMesh.position.z = 0.02;
+      pinMesh.rotation.x = Math.PI / 2;
+      nodeGroup.add(pinMesh);
+
+      const beaconGeo = new THREE.SphereGeometry(0.012, 12, 12);
+      const beaconMat = new THREE.MeshBasicMaterial({ color: mod.rayColor });
+      const beaconMesh = new THREE.Mesh(beaconGeo, beaconMat);
+      beaconMesh.position.z = 0.042;
+      nodeGroup.add(beaconMesh);
+
+      // Fine circular signal ripple
+      const ringGeo = new THREE.RingGeometry(0.022, 0.028, 24);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: mod.rayColor,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.65
+      });
+      const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+      nodeGroup.add(ringMesh);
+
+      moonMesh.add(nodeGroup);
+
+      // Click hit target
+      const hitBox = new THREE.Mesh(
+        new THREE.SphereGeometry(0.04, 8, 8),
+        new THREE.MeshBasicMaterial({ visible: false })
+      );
+      hitBox.position.z = 0.03;
+      nodeGroup.add(hitBox);
+      hitBox.userData = { moduleData: mod, nodeGroup };
+      interactiveObjects.push(hitBox);
+
+      // Orbital Relay Node
+      const relayGroup = new THREE.Group();
+      const satMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(0.03, 0.02, 0.02),
+        new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.8, roughness: 0.2 })
+      );
+      relayGroup.add(satMesh);
+
+      // Solar Wings
+      const wingMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 0.002, 0.025),
+        new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+      );
+      relayGroup.add(wingMesh);
+
+      scene.add(relayGroup);
+      relayGroup.userData = {
+        radius: moonRadius * (1.55 + idx * 0.1),
+        speed: 0.0003 + (idx * 0.00006),
+        angle: (idx / LUNAR_TECH_MODULES.length) * Math.PI * 2,
+        inclination: (idx - 2) * 0.32
+      };
+
+      stationNodes.push({
+        moduleData: mod,
+        nodeGroup,
+        surfacePos,
+        ringMesh,
+        relayGroup
+      });
+    });
+
+    // Helper: Create Fine Thin Ray with Glowing Photons
+    function createFineRay(color, pulseCount = 8) {
+      const curve = new THREE.LineCurve3(new THREE.Vector3(), new THREE.Vector3());
+      const geom = new THREE.BufferGeometry().setFromPoints(curve.getPoints(20));
+      const mat = new THREE.LineBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.3,
+        linewidth: 1
+      });
+      const line = new THREE.Line(geom, mat);
+      scene.add(line);
+
+      // Tiny photon dots moving smoothly
+      const pulses = [];
+      const pGeo = new THREE.SphereGeometry(0.008, 6, 6);
+      const pMat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.85 });
+
+      for (let i = 0; i < pulseCount; i++) {
+        const mesh = new THREE.Mesh(pGeo, pMat);
+        scene.add(mesh);
+        pulses.push({
+          mesh,
+          progress: i / pulseCount,
+          speed: 0.006 + Math.random() * 0.002
+        });
+      }
+
+      return {
+        line,
+        geom,
+        curve,
+        pulses,
+        update: function(p1, p2) {
+          this.curve.v1.copy(p1);
+          this.curve.v2.copy(p2);
+          this.geom.setFromPoints(this.curve.getPoints(20));
+
+          this.pulses.forEach(p => {
+            p.progress += p.speed;
+            if (p.progress > 1.0) p.progress = 0.0;
+            const pt = this.curve.getPoint(p.progress);
+            p.mesh.position.copy(pt);
+          });
+        },
+        setVisible: function(val) {
+          this.line.visible = val;
+          this.pulses.forEach(p => p.mesh.visible = val);
+        }
+      };
+    }
+
+    // Connect surface stations to orbital relays
+    stationNodes.forEach((node, idx) => {
+      const ray = createFineRay(node.moduleData.rayColor, 7);
+      rayBundles.push({
+        type: 'RELAY_UPLINK',
+        techIdx: idx,
+        rayInstance: ray,
+        node
+      });
+    });
+
+    // Inter-station mesh links
+    for (let i = 0; i < stationNodes.length; i++) {
+      const next = (i + 1) % stationNodes.length;
+      const meshRay = createFineRay(0x10b981, 5);
+      meshRay.line.material.opacity = 0.2;
+      rayBundles.push({
+        type: 'MESH_LINK',
+        techIdx: 99,
+        rayInstance: meshRay,
+        node1: stationNodes[i],
+        node2: stationNodes[next]
+      });
+    }
+
+    // Jammer Interceptor Ray
+    const jammerPos = new THREE.Vector3(2.0, 0.6, 1.4);
+    const jammerMesh = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.04),
+      new THREE.MeshBasicMaterial({ color: 0xf43f5e, wireframe: true })
+    );
+    jammerMesh.position.copy(jammerPos);
+    scene.add(jammerMesh);
+
+    const jammerRay = createFineRay(0xf43f5e, 10);
+    jammerRay.setVisible(false);
+    jammerMesh.visible = false;
+  </script>
+
+  <script>
+    /* Smooth Orbital Controls & Camera Flight */
+    let isDragging = false;
+    let prevMouseX = 0;
+    let prevMouseY = 0;
+    let rotX = 0.2;
+    let rotY = 0.0;
+    let cameraDistance = 3.6;
+    let targetCameraDistance = 3.6;
+    const minDistance = 1.35;
+    const maxDistance = 6.0;
+
+    let targetLookAt = new THREE.Vector3(0, 0, 0);
+    let currentLookAt = new THREE.Vector3(0, 0, 0);
+    let cameraFlyTarget = null;
+
+    // Mouse drag
+    window.addEventListener('mousedown', (e) => {
+      if (e.target.closest('aside') || e.target.closest('header') || e.target.closest('footer') || e.target.closest('button')) return;
+      isDragging = true;
+      prevMouseX = e.clientX;
+      prevMouseY = e.clientY;
+      cameraFlyTarget = null;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - prevMouseX;
+      const dy = e.clientY - prevMouseY;
+      prevMouseX = e.clientX;
+      prevMouseY = e.clientY;
+
+      rotY += dx * 0.005;
+      rotX += dy * 0.005;
+      rotX = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, rotX));
+    });
+
+    window.addEventListener('mouseup', () => { isDragging = false; });
+    window.addEventListener('mouseleave', () => { isDragging = false; });
+
+    // Touch support
+    let touchDist = 0;
+    window.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        if (e.target.closest('aside') || e.target.closest('header') || e.target.closest('footer') || e.target.closest('button')) return;
+        isDragging = true;
+        prevMouseX = e.touches[0].clientX;
+        prevMouseY = e.touches[0].clientY;
+        cameraFlyTarget = null;
+      } else if (e.touches.length === 2) {
+        touchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (isDragging && e.touches.length === 1) {
+        const dx = e.touches[0].clientX - prevMouseX;
+        const dy = e.touches[0].clientY - prevMouseY;
+        prevMouseX = e.touches[0].clientX;
+        prevMouseY = e.touches[0].clientY;
+        rotY += dx * 0.006;
+        rotX += dy * 0.006;
+      } else if (e.touches.length === 2) {
+        const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        targetCameraDistance += (touchDist - dist) * 0.005;
+        targetCameraDistance = Math.max(minDistance, Math.min(maxDistance, targetCameraDistance));
+        touchDist = dist;
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchend', () => { isDragging = false; });
+
+    // Scroll zoom
+    window.addEventListener('wheel', (e) => {
+      if (e.target.closest('aside') || e.target.closest('header') || e.target.closest('footer')) return;
+      targetCameraDistance += e.deltaY * 0.002;
+      targetCameraDistance = Math.max(minDistance, Math.min(maxDistance, targetCameraDistance));
+      cameraFlyTarget = null;
+    }, { passive: true });
+
+    // Raycast click on 3D lunar node
+    const raycaster = new THREE.Raycaster();
+    const mouseCoord = new THREE.Vector2();
+
+    window.addEventListener('click', (e) => {
+      if (e.target.closest('aside') || e.target.closest('header') || e.target.closest('footer') || e.target.closest('button')) return;
+      mouseCoord.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouseCoord.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+      raycaster.setFromCamera(mouseCoord, camera);
+      const hits = raycaster.intersectObjects(interactiveObjects, true);
+
+      if (hits.length > 0) {
+        const mod = hits[0].object.userData.moduleData;
+        if (mod) {
+          selectModule(mod);
+          flyToNode(mod);
+        }
+      }
+    });
+
+    function flyToNode(mod) {
+      const station = stationNodes.find(s => s.moduleData.id === mod.id);
+      if (!station) return;
+
+      const worldPos = station.surfacePos.clone().applyMatrix4(moonMesh.matrixWorld);
+      const flyPos = worldPos.clone().normalize().multiplyScalar(2.1);
+
+      cameraFlyTarget = {
+        position: flyPos,
+        lookAt: worldPos.clone()
+      };
+    }
+  </script>
+
+  <script>
+    /* Clean Minimalist DSP Oscilloscope */
+    const scopeCanvas = document.getElementById('scope-canvas');
+    const scopeCtx = scopeCanvas.getContext('2d');
+    let scopeWidth, scopeHeight;
+
+    function resizeScope() {
+      scopeWidth = scopeCanvas.parentElement.clientWidth;
+      scopeHeight = scopeCanvas.parentElement.clientHeight;
+      scopeCanvas.width = scopeWidth;
+      scopeCanvas.height = scopeHeight;
+    }
+    window.addEventListener('resize', resizeScope);
+    resizeScope();
+
+    let scopePhase = 0;
+    function renderScope() {
+      if (!scopeCtx) return;
+      scopeCtx.fillStyle = '#030712';
+      scopeCtx.fillRect(0, 0, scopeWidth, scopeHeight);
+
+      scopePhase += 0.06;
+      const mid = scopeHeight / 2;
+
+      // Fine grid line
+      scopeCtx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+      scopeCtx.lineWidth = 1;
+      scopeCtx.beginPath();
+      scopeCtx.moveTo(0, mid);
+      scopeCtx.lineTo(scopeWidth, mid);
+      scopeCtx.stroke();
+
+      // Curve 1: TX Leakage (+30 dBm)
+      scopeCtx.strokeStyle = 'rgba(244, 63, 94, 0.8)';
+      scopeCtx.lineWidth = 1.2;
+      scopeCtx.beginPath();
+      for (let x = 0; x < scopeWidth; x++) {
+        const t = x * 0.09 + scopePhase;
+        const y = mid + Math.sin(t) * 22 + Math.sin(t * 3.0) * 6;
+        if (x === 0) scopeCtx.moveTo(x, y);
+        else scopeCtx.lineTo(x, y);
+      }
+      scopeCtx.stroke();
+
+      // Curve 2: Volterra Reconstruction (Inverted)
+      scopeCtx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+      scopeCtx.lineWidth = 1.0;
+      scopeCtx.beginPath();
+      for (let x = 0; x < scopeWidth; x++) {
+        const t = x * 0.09 + scopePhase;
+        const y = mid - (Math.sin(t) * 21.6 + Math.sin(t * 3.0) * 5.8);
+        if (x === 0) scopeCtx.moveTo(x, y);
+        else scopeCtx.lineTo(x, y);
+      }
+      scopeCtx.stroke();
+
+      // Curve 3: Residual Clean RX (< -82 dBm, after 110 dB cancellation)
+      scopeCtx.strokeStyle = 'rgba(16, 185, 129, 0.9)';
+      scopeCtx.lineWidth = 1.6;
+      scopeCtx.beginPath();
+      for (let x = 0; x < scopeWidth; x++) {
+        const t = x * 0.05 + scopePhase * 0.5;
+        const noise = (Math.random() - 0.5) * (jammerActive ? 4 : 1.2);
+        const y = mid + Math.sin(t * 1.8) * 4.2 + noise;
+        if (x === 0) scopeCtx.moveTo(x, y);
+        else scopeCtx.lineTo(x, y);
+      }
+      scopeCtx.stroke();
+
+      requestAnimationFrame(renderScope);
+    }
+    renderScope();
+  </script>
+
+  <script>
+    /* UI Binding & Clean Dossier Presentation */
+    const techListEl = document.getElementById('tech-list');
+    const dossierTitle = document.getElementById('dossier-title');
+    const dossierTagline = document.getElementById('dossier-tagline');
+    const dossierCategory = document.getElementById('dossier-category');
+    const dossierId = document.getElementById('dossier-id');
+    const dossierDesc = document.getElementById('dossier-desc');
+    const dossierNovelty = document.getElementById('dossier-novelty');
+    const dossierSpace = document.getElementById('dossier-space');
+    const dossierSafety = document.getElementById('dossier-safety');
+    const dossierCost = document.getElementById('dossier-cost');
+    const dossierBlocker = document.getElementById('dossier-blocker');
+
+    function renderModuleList() {
+      techListEl.innerHTML = '';
+      LUNAR_TECH_MODULES.forEach((mod) => {
+        const isSelected = mod.id === currentSelectedModule.id;
+        const btn = document.createElement('div');
+        btn.className = `p-2 rounded-xl cursor-pointer transition flex items-center justify-between border ${
+          isSelected 
+            ? 'bg-sky-500/15 border-sky-400/50 text-white' 
+            : 'hud-chip border-transparent text-slate-300 hover:text-white'
+        }`;
+        btn.innerHTML = `
+          <div class="flex items-center gap-2 overflow-hidden">
+            <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background-color: ${mod.color}"></span>
+            <div class="truncate">
+              <div class="font-medium text-[11px] truncate">${mod.short}</div>
+              <div class="text-[9px] text-slate-400 truncate">${mod.lunarSite}</div>
+            </div>
+          </div>
+          <span class="text-[10px] font-mono text-slate-400 ml-1">#${mod.num}</span>
+        `;
+        btn.addEventListener('click', () => {
+          selectModule(mod);
+          flyToNode(mod);
+        });
+        techListEl.appendChild(btn);
+      });
+    }
+
+    function selectModule(mod) {
+      currentSelectedModule = mod;
+      renderModuleList();
+
+      dossierTitle.textContent = mod.name;
+      dossierTagline.textContent = mod.tagline;
+      dossierCategory.textContent = mod.category;
+      dossierCategory.style.color = mod.color;
+      dossierId.textContent = `INDEX #${mod.num} • ${mod.id}`;
+      dossierDesc.textContent = mod.desc;
+      dossierNovelty.textContent = mod.novelty;
+      dossierSpace.textContent = mod.spaceImpact;
+      dossierSafety.textContent = mod.publicSafety;
+      dossierCost.textContent = mod.budget;
+      dossierBlocker.textContent = mod.blocker;
+
+      // Highlight selected station beacon
+      stationNodes.forEach(node => {
+        if (node.moduleData.id === mod.id) {
+          node.ringMesh.material.opacity = 1.0;
+          node.ringMesh.scale.set(1.3, 1.3, 1.3);
+        } else {
+          node.ringMesh.material.opacity = 0.5;
+          node.ringMesh.scale.set(1.0, 1.0, 1.0);
+        }
+      });
+    }
+
+    renderModuleList();
+    selectModule(LUNAR_TECH_MODULES[0]);
+
+    // On-screen Zoom Buttons
+    document.getElementById('btn-zoom-in').addEventListener('click', () => {
+      targetCameraDistance = Math.max(minDistance, targetCameraDistance - 0.5);
+    });
+    document.getElementById('btn-zoom-out').addEventListener('click', () => {
+      targetCameraDistance = Math.min(maxDistance, targetCameraDistance + 0.5);
+    });
+    document.getElementById('btn-reset-view').addEventListener('click', () => {
+      cameraFlyTarget = null;
+      rotX = 0.2;
+      rotY = 0.0;
+      targetCameraDistance = 3.6;
+      targetLookAt.set(0, 0, 0);
+    });
+
+    document.getElementById('btn-focus-site').addEventListener('click', () => {
+      flyToNode(currentSelectedModule);
+    });
+
+    // Panel Minimization & Toggle
+    const panelLeft = document.getElementById('panel-left');
+    const panelRight = document.getElementById('panel-right');
+
+    document.getElementById('btn-toggle-left').addEventListener('click', () => {
+      panelLeft.classList.toggle('panel-collapsed-left');
+    });
+    document.getElementById('btn-toggle-right').addEventListener('click', () => {
+      panelRight.classList.toggle('panel-collapsed-right');
+    });
+    document.getElementById('btn-minimize-dossier').addEventListener('click', () => {
+      panelRight.classList.add('panel-collapsed-right');
+    });
+
+    // Jammer Injection
+    const btnJammer = document.getElementById('btn-inject-noise');
+    btnJammer.addEventListener('click', () => {
+      jammerActive = !jammerActive;
+      jammerMesh.visible = jammerActive;
+      jammerRay.setVisible(jammerActive);
+
+      if (jammerActive) {
+        btnJammer.classList.add('bg-rose-500/20', 'border-rose-500/50');
+        document.getElementById('cancellation-stat').textContent = '-115.4 dB (NULLING)';
+        document.getElementById('cancellation-stat').className = 'text-rose-400 font-bold';
+      } else {
+        btnJammer.classList.remove('bg-rose-500/20', 'border-rose-500/50');
+        document.getElementById('cancellation-stat').textContent = '-112.8 dB';
+        document.getElementById('cancellation-stat').className = 'text-emerald-400 font-bold';
+      }
+    });
+
+    // Ray Filters
+    document.getElementById('chk-sat-links').addEventListener('change', (e) => {
+      rayBundles.filter(r => r.type === 'RELAY_UPLINK').forEach(r => r.rayInstance.setVisible(e.target.checked));
+    });
+    document.getElementById('chk-mesh-links').addEventListener('change', (e) => {
+      rayBundles.filter(r => r.type === 'MESH_LINK').forEach(r => r.rayInstance.setVisible(e.target.checked));
+    });
+
+    // Flow Speed Toggle
+    document.getElementById('btn-toggle-rays').addEventListener('click', () => {
+      rayBundles.forEach(b => {
+        b.rayInstance.pulses.forEach(p => {
+          p.speed = (p.speed < 0.012) ? 0.022 : 0.007;
+        });
+      });
+    });
+  </script>
+
+  <script>
+    /* Main Three.js Animation Loop */
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const time = clock.getElapsedTime();
+
+      // Camera Fly-To Interpolation
+      if (cameraFlyTarget) {
+        camera.position.lerp(cameraFlyTarget.position, 0.045);
+        currentLookAt.lerp(cameraFlyTarget.lookAt, 0.045);
+        camera.lookAt(currentLookAt);
+
+        if (camera.position.distanceTo(cameraFlyTarget.position) < 0.03) {
+          cameraFlyTarget = null;
+          const sph = new THREE.Spherical().setFromVector3(camera.position);
+          rotX = Math.PI / 2 - sph.phi;
+          rotY = sph.theta;
+          cameraDistance = sph.radius;
+          targetCameraDistance = sph.radius;
+        }
+      } else {
+        // Standard user orbit
+        cameraDistance += (targetCameraDistance - cameraDistance) * 0.08;
+        const phi = Math.PI / 2 - rotX;
+        const theta = rotY;
+
+        const cx = cameraDistance * Math.sin(phi) * Math.sin(theta);
+        const cy = cameraDistance * Math.cos(phi);
+        const cz = cameraDistance * Math.sin(phi) * Math.cos(theta);
+
+        camera.position.set(cx, cy, cz);
+        currentLookAt.lerp(targetLookAt, 0.08);
+        camera.lookAt(currentLookAt);
+      }
+
+      // Smooth slow lunar axial rotation
+      moonMesh.rotation.y = time * 0.012;
+
+      // Update Orbital Relay Satellites
+      stationNodes.forEach(node => {
+        const sat = node.relayGroup;
+        const r = sat.userData.radius;
+        const spd = sat.userData.speed;
+        const a = sat.userData.angle + time * spd * 22;
+        const inc = sat.userData.inclination;
+
+        sat.position.x = r * Math.cos(a);
+        sat.position.y = r * Math.sin(a) * Math.sin(inc);
+        sat.position.z = r * Math.sin(a) * Math.cos(inc);
+        sat.lookAt(0, 0, 0);
+      });
+
+      // Update Dynamic Rays
+      rayBundles.forEach(bundle => {
+        if (bundle.type === 'RELAY_UPLINK') {
+          const pSurf = bundle.node.surfacePos.clone().applyMatrix4(moonMesh.matrixWorld);
+          const pRelay = bundle.node.relayGroup.position;
+          bundle.rayInstance.update(pSurf, pRelay);
+        } else if (bundle.type === 'MESH_LINK') {
+          const p1 = bundle.node1.surfacePos.clone().applyMatrix4(moonMesh.matrixWorld);
+          const p2 = bundle.node2.surfacePos.clone().applyMatrix4(moonMesh.matrixWorld);
+          bundle.rayInstance.update(p1, p2);
+        }
+      });
+
+      // Update Jammer if active
+      if (jammerActive) {
+        const pTarget = stationNodes[2].surfacePos.clone().applyMatrix4(moonMesh.matrixWorld);
+        jammerRay.update(jammerPos, pTarget);
+        jammerMesh.rotation.x += 0.02;
+        jammerMesh.rotation.y += 0.03;
+      }
+
+      // Gentle beacon pulse
+      stationNodes.forEach(node => {
+        const s = 1.0 + 0.12 * Math.sin(time * 3.0);
+        node.ringMesh.scale.set(s, s, s);
+      });
+
+      // Telemetry update
+      const distKm = Math.round((cameraDistance - moonRadius) * 1737.4);
+      document.getElementById('telemetry-alt').textContent = `${distKm.toLocaleString()} km`;
+
+      const sph = new THREE.Spherical().setFromVector3(camera.position);
+      const lat = ((Math.PI / 2 - sph.phi) * (180 / Math.PI)).toFixed(1);
+      const lon = (sph.theta * (180 / Math.PI)).toFixed(1);
+      document.getElementById('telemetry-lat').textContent = `${Math.abs(lat)}° ${lat >= 0 ? 'N' : 'S'}`;
+      document.getElementById('telemetry-lon').textContent = `${Math.abs(lon)}° ${lon >= 0 ? 'E' : 'W'}`;
+
+      renderer.render(scene, camera);
+    }
+
+    // Responsive Canvas
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    window.onload = function() {
+      animate();
+    };
+  </script>
+</body>
+</html>
