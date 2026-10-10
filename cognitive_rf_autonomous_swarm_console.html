@@ -1,0 +1,1564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NASA Artemis Cognitive RF & Autonomous Swarm Spectrum Console</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js 3D Engine for Lunar DEM Terrain and Raypaths -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Lucide Vector Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Tone.js for RF Channel & Modulation Audio Synthesis -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            lunar: {
+              void: '#020617',
+              dark: '#070d18',
+              panel: '#0d1527',
+              card: '#121e36',
+              border: '#1e2e4d',
+              cyan: '#38bdf8',
+              emerald: '#10b981',
+              amber: '#fbbf24',
+              red: '#f87171',
+              purple: '#c084fc',
+              blue: '#60a5fa',
+              plasma: '#ec4899',
+              gold: '#f59e0b'
+            }
+          },
+          fontFamily: {
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace']
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    /* Precision custom aerospace telemetry scrollbars */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: #020617; }
+    ::-webkit-scrollbar-thumb { background: #1e2e4d; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #38bdf8; }
+
+    .hud-grid {
+      background-size: 30px 30px;
+      background-image: 
+        linear-gradient(to right, rgba(56, 189, 248, 0.035) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(56, 189, 248, 0.035) 1px, transparent 1px);
+    }
+    .glow-cyan { box-shadow: 0 0 16px rgba(56, 189, 248, 0.28); }
+    .glow-emerald { box-shadow: 0 0 16px rgba(16, 185, 129, 0.32); }
+    .glow-purple { box-shadow: 0 0 16px rgba(192, 132, 252, 0.28); }
+    .glow-plasma { box-shadow: 0 0 16px rgba(236, 72, 153, 0.35); }
+  </style>
+</head>
+
+<body class="bg-lunar-void text-slate-100 font-sans min-h-screen flex flex-col overflow-x-hidden selection:bg-lunar-cyan selection:text-black hud-grid">
+
+  <header class="border-b border-lunar-border bg-lunar-panel/95 backdrop-blur-md sticky top-0 z-50 px-4 py-2 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+    <div class="flex items-center space-x-3">
+      <div class="w-10 h-10 rounded-lg bg-sky-950/80 border border-lunar-cyan/60 flex items-center justify-center font-black text-lunar-cyan tracking-wider text-xs glow-cyan">
+        <span>SCaN</span>
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <h1 class="text-sm font-bold tracking-wider text-white uppercase flex items-center gap-2">
+            NASA Artemis Cognitive RF & Edge-SDR Swarm Console
+            <span class="text-[10px] bg-sky-900/60 text-sky-300 border border-sky-700/60 px-2 py-0.5 rounded font-mono font-medium">TRL 6/7 Edge Core</span>
+          </h1>
+        </div>
+        <p class="text-xs text-slate-400">Autonomous RL Deconfliction, DTN-Mesh Swarms, Waveform Morphing & Distributed RF Crowdsensing</p>
+      </div>
+    </div>
+
+    <!-- Active Swarm Nodes Status Indicators -->
+    <div class="hidden xl:flex items-center space-x-2 text-xs font-mono">
+      <div class="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-black/60 border border-lunar-border">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span class="text-slate-400">Agent A:</span>
+        <span class="text-slate-200 font-bold">LTV-1 Rover (Peak)</span>
+      </div>
+      <div class="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-black/60 border border-lunar-border">
+        <span class="w-2 h-2 rounded-full bg-lunar-purple animate-pulse"></span>
+        <span class="text-slate-400">Agent B:</span>
+        <span class="text-slate-200 font-bold">VIPER Scout (Shadow)</span>
+      </div>
+      <div class="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-black/60 border border-lunar-border">
+        <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+        <span class="text-slate-400">Agent C:</span>
+        <span class="text-slate-200 font-bold">HLS Base Habitat</span>
+      </div>
+    </div>
+
+    <!-- Header Actions -->
+    <div class="flex items-center space-x-2">
+      <button id="btn-audio" onclick="toggleAudio()" class="px-2.5 py-1.5 bg-lunar-border/60 hover:bg-lunar-border text-slate-300 rounded text-xs flex items-center space-x-1.5 transition">
+        <i data-lucide="volume-2" class="w-3.5 h-3.5 text-lunar-cyan"></i>
+        <span id="audio-label" class="font-mono text-[11px]">Sonification: OFF</span>
+      </button>
+      <button onclick="injectHostileInterference()" class="px-2.5 py-1.5 bg-red-950/70 hover:bg-red-900 border border-red-700/80 text-red-200 rounded text-xs font-mono transition flex items-center gap-1">
+        <i data-lucide="radio" class="w-3.5 h-3.5 text-red-400 animate-pulse"></i>
+        <span>Inject Jammer / Null</span>
+      </button>
+      <button onclick="exportCognitiveMissionLog()" class="px-3 py-1.5 bg-sky-600/30 hover:bg-sky-600/50 text-sky-200 border border-sky-500/50 rounded text-xs font-semibold flex items-center space-x-1.5 transition">
+        <i data-lucide="download" class="w-3.5 h-3.5"></i>
+        <span>Export Log</span>
+      </button>
+    </div>
+  </header>
+
+  <section class="bg-lunar-card/90 border-b border-lunar-border px-4 py-2.5 z-40">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+        <i data-lucide="sparkles" class="w-4 h-4 text-lunar-cyan"></i> 4 Breakthrough Autonomous RF & Mesh Software Innovations
+      </span>
+      <span class="text-[10px] font-mono text-slate-400">Decentralized Edge Intelligence • Commercial & Planetary Defense</span>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-2 text-xs font-mono">
+      
+      <!-- Innovation 1: Autonomous Reinforcement Learning RF Spectral Deconfliction Engine -->
+      <button onclick="selectInnovation(1)" id="tab-innov-1" class="p-2.5 rounded-lg border border-lunar-cyan bg-sky-950/70 text-left transition glow-cyan flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="font-bold text-sky-200 text-[11px]">1. RL Spectral Deconfliction</span>
+          <span class="text-[9px] bg-sky-900/80 text-sky-300 border border-sky-700 px-1 rounded font-semibold">Cognitive PHY</span>
+        </div>
+        <p class="text-[10px] text-slate-300 mt-1 font-sans leading-tight">Edge-hosted deep RL; sub-ms autonomous policy switching in contested/jammed spectrum.</p>
+        <div class="mt-1.5 flex items-center justify-between text-[9px] text-slate-400 border-t border-lunar-border/60 pt-1">
+          <span>Cost: $4.2M–$5.5M (24mo)</span>
+          <span class="text-emerald-400 font-bold">TRL 7 Target</span>
+        </div>
+      </button>
+
+      <!-- Innovation 2: Disruption-Tolerant Cognitive Mesh Routing Protocol (DTN-Mesh) -->
+      <button onclick="selectInnovation(2)" id="tab-innov-2" class="p-2.5 rounded-lg border border-lunar-border bg-black/40 hover:border-slate-500 text-left transition flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="font-bold text-slate-200 text-[11px]">2. DTN-Mesh Cognitive Routing</span>
+          <span class="text-[9px] bg-purple-950 text-purple-300 border border-purple-800 px-1 rounded font-semibold">Mesh Protocols</span>
+        </div>
+        <p class="text-[10px] text-slate-400 mt-1 font-sans leading-tight">Decentralized bundle protocol + predictive link-drop topology for surface agent swarms.</p>
+        <div class="mt-1.5 flex items-center justify-between text-[9px] text-slate-400 border-t border-lunar-border/60 pt-1">
+          <span>Cost: $3.8M–$4.9M (20mo)</span>
+          <span class="text-purple-300 font-bold">Zero-Loss Cratering</span>
+        </div>
+      </button>
+
+      <!-- Innovation 3: Sub-Millisecond Dynamic Physical-Layer Waveform Morphing Engine -->
+      <button onclick="selectInnovation(3)" id="tab-innov-3" class="p-2.5 rounded-lg border border-lunar-border bg-black/40 hover:border-slate-500 text-left transition flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="font-bold text-slate-200 text-[11px]">3. Sub-ms Waveform Morphing</span>
+          <span class="text-[9px] bg-pink-950 text-pink-300 border border-pink-800 px-1 rounded font-semibold">Cognitive PHY</span>
+        </div>
+        <p class="text-[10px] text-slate-400 mt-1 font-sans leading-tight">Fast SDR PHY morphing (PSK to CSS Chirp) maintaining continuous non-coherent bitstreams.</p>
+        <div class="mt-1.5 flex items-center justify-between text-[9px] text-slate-400 border-t border-lunar-border/60 pt-1">
+          <span>Cost: $5.1M–$6.4M (30mo)</span>
+          <span class="text-pink-300 font-bold">Plasma & EDL Proof</span>
+        </div>
+      </button>
+
+      <!-- Innovation 4: Distributed Multi-Agent RF Crowdsensing & Cooperative Spectrum Mapper -->
+      <button onclick="selectInnovation(4)" id="tab-innov-4" class="p-2.5 rounded-lg border border-lunar-border bg-black/40 hover:border-slate-500 text-left transition flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="font-bold text-slate-200 text-[11px]">4. RF Crowdsensing 3D Mapper</span>
+          <span class="text-[9px] bg-amber-950 text-amber-300 border border-amber-800 px-1 rounded font-semibold">RF Sensing</span>
+        </div>
+        <p class="text-[10px] text-slate-400 mt-1 font-sans leading-tight">Every transceiver as a passive sensor; federated 3D electromagnetic environment tomography.</p>
+        <div class="mt-1.5 flex items-center justify-between text-[9px] text-slate-400 border-t border-lunar-border/60 pt-1">
+          <span>Cost: $3.6M–$4.8M (18mo)</span>
+          <span class="text-amber-300 font-bold">Tomography Heatmap</span>
+        </div>
+      </button>
+
+    </div>
+  </section>
+
+  <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 overflow-hidden">
+    
+    <!-- LEFT COLUMN: 3D Zoomable Lunar Terrain & Channel Visualization (7 Cols) -->
+    <section class="lg:col-span-7 flex flex-col space-y-3">
+      
+      <!-- 3D Terrain & Dynamic Swarm Map -->
+      <div class="relative bg-lunar-panel border border-lunar-border rounded-xl overflow-hidden flex-1 min-h-[440px] shadow-2xl flex flex-col">
+        
+        <!-- Viewport Top Toolbar -->
+        <div class="absolute top-2 left-2 z-20 flex items-center space-x-2 bg-black/85 backdrop-blur-md px-3 py-1.5 rounded-lg border border-lunar-border text-xs">
+          <span class="text-lunar-cyan font-bold flex items-center gap-1.5 font-mono">
+            <i data-lucide="crosshair" class="w-4 h-4 text-sky-400"></i> Artemis South Pole 3D
+          </span>
+          <span class="text-slate-600">|</span>
+          <button onclick="setCameraPreset('overview')" id="cam-overview" class="px-2 py-0.5 bg-sky-500/20 text-sky-300 rounded font-mono hover:bg-sky-500/30 transition text-[11px]">Swarm Orbit</button>
+          <button onclick="setCameraPreset('rover')" id="cam-rover" class="px-2 py-0.5 text-slate-400 rounded font-mono hover:bg-lunar-border transition text-[11px]">LTV-1 Rover</button>
+          <button onclick="setCameraPreset('crater')" id="cam-crater" class="px-2 py-0.5 text-slate-400 rounded font-mono hover:bg-lunar-border transition text-[11px]">VIPER Shadow</button>
+          <button onclick="setCameraPreset('gateway')" id="cam-gateway" class="px-2 py-0.5 text-slate-400 rounded font-mono hover:bg-lunar-border transition text-[11px]">Gateway Track</button>
+        </div>
+
+        <!-- Real-time Active Spectrum Health HUD -->
+        <div class="absolute top-2 right-2 z-20 bg-black/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-lunar-border text-[11px] font-mono flex items-center space-x-3">
+          <div><span class="text-slate-400">SINR:</span> <strong id="hud-sinr" class="text-emerald-400">+19.8 dB</strong></div>
+          <div><span class="text-slate-400">PHY State:</span> <strong id="hud-phy-state" class="text-sky-300">RL-OPTIMIZED</strong></div>
+          <div><span class="text-slate-400">Mesh Sync:</span> <strong id="hud-mesh-state" class="text-emerald-400 font-bold">100% CUSTODY</strong></div>
+        </div>
+
+        <!-- Three.js Canvas Container -->
+        <div id="three-container" class="w-full h-full flex-1 cursor-grab active:cursor-grabbing"></div>
+
+        <!-- 3D Legend & Active Ray Indicators -->
+        <div class="absolute bottom-2 left-2 right-2 z-20 flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono bg-black/85 backdrop-blur-md p-2 rounded-lg border border-lunar-border">
+          <div class="flex items-center flex-wrap gap-3" id="legend-indicators">
+            <span class="flex items-center gap-1 text-emerald-400">
+              <span class="w-2.5 h-1 bg-emerald-400 inline-block rounded"></span> Cognitive Carrier (Contention-Free)
+            </span>
+            <span class="flex items-center gap-1 text-purple-400">
+              <span class="w-2.5 h-1 bg-purple-400 inline-block rounded"></span> Peer-to-Peer DTN Hop
+            </span>
+            <span class="flex items-center gap-1 text-pink-400">
+              <span class="w-2.5 h-1 bg-pink-500 inline-block rounded"></span> Morphed CSS Chirp Link
+            </span>
+            <span class="flex items-center gap-1 text-amber-400">
+              <span class="w-2.5 h-1 bg-amber-400 border-b border-dashed inline-block"></span> Crowdsensed EM Tomography Ray
+            </span>
+          </div>
+          <div class="text-slate-400">
+            Rotate: Left-Click • Pan: Right-Click • Zoom: Scroll
+          </div>
+        </div>
+
+      </div>
+
+      <!-- DYNAMIC TELEMETRY & PHYSICAL-LAYER KPIS -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        
+        <div class="bg-lunar-panel border border-lunar-border rounded-lg p-2.5">
+          <div class="text-[10px] font-mono text-slate-400 uppercase">Policy Switch Latency</div>
+          <div class="flex items-baseline gap-1 mt-1">
+            <span id="metric-latency" class="text-lg font-bold font-mono text-emerald-400">0.34</span>
+            <span class="text-xs text-slate-400 font-mono">ms</span>
+          </div>
+          <div class="text-[9px] text-slate-400 mt-0.5 flex justify-between">
+            <span>Deconfliction Mode</span>
+            <span id="metric-latency-badge" class="text-emerald-400 font-semibold">SUB-MS EDGE RL</span>
+          </div>
+        </div>
+
+        <div class="bg-lunar-panel border border-lunar-border rounded-lg p-2.5">
+          <div class="text-[10px] font-mono text-slate-400 uppercase">Mesh Delivery Ratio</div>
+          <div class="flex items-baseline gap-1 mt-1">
+            <span id="metric-delivery" class="text-lg font-bold font-mono text-sky-400">99.8%</span>
+          </div>
+          <div class="text-[9px] text-slate-400 mt-0.5 flex justify-between">
+            <span>Disruption Window</span>
+            <span id="metric-dtn-badge" class="text-sky-300 font-mono">0 Pkts Dropped</span>
+          </div>
+        </div>
+
+        <div class="bg-lunar-panel border border-lunar-border rounded-lg p-2.5">
+          <div class="text-[10px] font-mono text-slate-400 uppercase">Active Reshaped Waveform</div>
+          <div class="flex items-baseline gap-1 mt-1">
+            <span id="metric-waveform" class="text-lg font-bold font-mono text-pink-400">16-QAM (Fast-Morphed)</span>
+          </div>
+          <div class="text-[9px] text-slate-400 mt-0.5 flex justify-between">
+            <span>Bitstream Integrity</span>
+            <span class="text-emerald-400 font-semibold">100% Phase Preserved</span>
+          </div>
+        </div>
+
+        <div class="bg-lunar-panel border border-lunar-border rounded-lg p-2.5">
+          <div class="text-[10px] font-mono text-slate-400 uppercase">Crowdsensed Nodes</div>
+          <div class="flex items-baseline gap-1 mt-1">
+            <span id="metric-nodes" class="text-lg font-bold font-mono text-amber-400">12 / 12</span>
+            <span class="text-xs text-slate-400 font-mono">Online</span>
+          </div>
+          <div class="text-[9px] text-slate-400 mt-0.5 flex justify-between">
+            <span>3D Tomography Res</span>
+            <span class="text-amber-300 font-mono">0.5m Spatial Grid</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- CIR MULTIPATH GRAPH & REAL-TIME SPECTRUM WATERFALL CANVAS -->
+      <div class="bg-lunar-panel border border-lunar-border rounded-xl p-3">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="activity" class="w-4 h-4 text-lunar-cyan"></i>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200" id="graph-title-label">Live Baseband Spectrum Deconfliction & I/Q Modulation Plane</h2>
+          </div>
+          <span class="text-[10px] font-mono text-slate-400" id="graph-subtitle-label">Sub-100μs Spectral FFT</span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
+          
+          <!-- Spectral FFT / CIR Waterfall (8 cols) -->
+          <div class="sm:col-span-8 bg-[#030712] border border-lunar-border rounded-lg p-2 flex flex-col">
+            <div class="flex items-center justify-between text-[10px] font-mono text-slate-400 mb-1">
+              <span id="graph-y-axis">Carrier Amplitude / Power (dBm)</span>
+              <span id="graph-x-axis">Frequency Raster (2.400 - 2.484 GHz S-Band)</span>
+            </div>
+            <canvas id="spectrum-canvas" class="w-full h-28 block rounded bg-black/60"></canvas>
+            <div class="flex justify-between items-center text-[9px] font-mono text-slate-400 mt-1" id="spectrum-footer-markers">
+              <span class="text-sky-400">Ch 1: Autonomous RL Policy Allocated</span>
+              <span class="text-red-400">Ch 6: Contested Jamming Detected</span>
+              <span class="text-emerald-400">Ch 11: Dynamic Swarm Mesh Channel</span>
+            </div>
+          </div>
+
+          <!-- I/Q Phase Scatter or Tomography Scatter (4 cols) -->
+          <div class="sm:col-span-4 bg-[#030712] border border-lunar-border rounded-lg p-2 flex flex-col items-center">
+            <div class="text-[10px] font-mono text-slate-400 mb-1 w-full text-left flex justify-between">
+              <span id="subgraph-title">I/Q Constellation</span>
+              <span id="subgraph-tag" class="text-emerald-400 font-bold font-mono">16-QAM</span>
+            </div>
+            <canvas id="iq-canvas" class="w-28 h-28 block rounded bg-black/60"></canvas>
+            <div class="text-[9px] font-mono text-slate-400 mt-1 text-center">
+              Phase Noise / EVM: <span id="metric-evm" class="text-emerald-400 font-bold">2.4%</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </section>
+
+    <section class="lg:col-span-5 flex flex-col space-y-3">
+      
+      <!-- INNOVATION DEEP DIVE CARD -->
+      <div class="bg-lunar-panel border border-lunar-border rounded-xl p-3.5 shadow-xl flex flex-col">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="cpu" class="w-4 h-4 text-sky-400" id="innov-icon"></i>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-100" id="innov-card-title">Innovation 1: Autonomous RL Spectral Deconfliction</h2>
+          </div>
+          <span class="text-[9px] font-mono bg-sky-950 text-sky-300 border border-sky-800 px-2 py-0.5 rounded font-semibold" id="innov-domain-tag">Cognitive PHY</span>
+        </div>
+
+        <!-- Dynamic Architectural Breakdown Container -->
+        <div class="bg-[#040813] border border-lunar-border rounded-lg p-3 space-y-2.5 font-mono text-xs">
+          
+          <div class="flex items-center justify-between border-b border-lunar-border pb-1.5 text-[10px]">
+            <span class="text-sky-300 font-bold">ESTIMATED DEV COST / TIMELINE:</span>
+            <span id="innov-cost-timeline" class="text-emerald-400 font-bold">$4.2M to $5.5M (24 Months to TRL 7)</span>
+          </div>
+
+          <!-- Core Capability & Novelty -->
+          <div class="space-y-1">
+            <div class="text-[10px] font-bold text-amber-300 uppercase flex items-center gap-1">
+              <i data-lucide="zap" class="w-3 h-3"></i> Core Algorithmic Novelty
+            </div>
+            <p id="innov-novelty" class="text-[11px] text-slate-300 font-sans leading-relaxed">
+              Real-time, edge-hosted deep reinforcement learning engine that autonomously monitors, deconflicts, and re-allocates RF communication channels across contested or congested spectrum bands without relying on central base stations. Its novelty is sub-millisecond autonomous policy switching under hostile multipath fading.
+            </p>
+          </div>
+
+          <!-- Why NASA & Legacy Industry Missed It -->
+          <div class="grid grid-cols-2 gap-2 pt-1 border-t border-lunar-border/60">
+            
+            <div class="bg-lunar-card border border-red-900/40 rounded p-2">
+              <div class="text-[9px] font-bold text-red-400 uppercase flex items-center gap-1">
+                <i data-lucide="alert-triangle" class="w-3 h-3"></i> Why NASA Missed It
+              </div>
+              <p id="innov-nasa-missed" class="text-[10px] text-slate-300 font-sans mt-0.5 leading-snug">
+                Historical planetary flight communications strictly relied on pre-coordinated, deterministic ground tracking regimes and static frequency coordination.
+              </p>
+            </div>
+
+            <div class="bg-lunar-card border border-amber-900/40 rounded p-2">
+              <div class="text-[9px] font-bold text-amber-400 uppercase flex items-center gap-1">
+                <i data-lucide="shield-alert" class="w-3 h-3"></i> Why Industry Missed It
+              </div>
+              <p id="innov-industry-missed" class="text-[10px] text-slate-300 font-sans mt-0.5 leading-snug">
+                Motorola and L3Harris legacy revenues relied on selling proprietary P25 trunked repeaters with static 12.5 kHz channel rasters rather than dynamic cognitive PHYs.
+              </p>
+            </div>
+
+          </div>
+
+          <!-- Dual Use: Artemis Exploration vs Emergency Responders -->
+          <div class="grid grid-cols-2 gap-2 pt-1 border-t border-lunar-border/60">
+            
+            <div class="bg-sky-950/40 border border-sky-800/40 rounded p-2">
+              <div class="text-[9px] font-bold text-sky-300 uppercase flex items-center gap-1">
+                <i data-lucide="globe" class="w-3 h-3"></i> NASA Artemis Mission Impact
+              </div>
+              <p id="innov-artemis-impact" class="text-[10px] text-slate-300 font-sans mt-0.5 leading-snug">
+                Autonomously deconflicts communications between lunar rovers, landers, and scientific payloads in real time during multi-agent surface traverses.
+              </p>
+            </div>
+
+            <div class="bg-emerald-950/40 border border-emerald-800/40 rounded p-2">
+              <div class="text-[9px] font-bold text-emerald-300 uppercase flex items-center gap-1">
+                <i data-lucide="flame" class="w-3 h-3"></i> Emergency Responders Dual-Use
+              </div>
+              <p id="innov-responder-impact" class="text-[10px] text-slate-300 font-sans mt-0.5 leading-snug">
+                Dynamically circumvents intentional jamming and heavy co-channel congestion during large-scale urban disaster responses without dispatchers.
+              </p>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- ENVIRONMENT TUNERS & INTERACTIVE SWARM ACTIONS -->
+      <div class="bg-lunar-panel border border-lunar-border rounded-xl p-3 flex-1 flex flex-col justify-between">
+        
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="sliders" class="w-4 h-4 text-lunar-cyan"></i>
+              <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200">Autonomous Edge Simulation Controls</h2>
+            </div>
+            <span class="text-[10px] font-mono text-sky-400" id="active-ctrl-label">Engine 1: RL Policy Stress Testing</span>
+          </div>
+
+          <!-- Parameter Slider 1: Hostile Interference / Contention Level -->
+          <div class="space-y-2 text-xs">
+            <div>
+              <div class="flex justify-between text-slate-300 mb-1">
+                <label class="font-medium flex items-center gap-1 text-[11px]" id="slider-1-label">
+                  Contested Spectrum & Jamming Level
+                  <span class="text-[10px] text-slate-400">(Interference spectral density)</span>
+                </label>
+                <span id="slider-1-val" class="font-mono text-red-400 font-bold">15% Contested</span>
+              </div>
+              <input id="slider-contention" type="range" min="0" max="100" value="15" class="w-full h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-red-400" />
+            </div>
+
+            <!-- Parameter Slider 2: Crater Occlusion & Path Loss -->
+            <div>
+              <div class="flex justify-between text-slate-300 mb-1">
+                <label class="font-medium flex items-center gap-1 text-[11px]" id="slider-2-label">
+                  VIPER Scout Crater Depth & Occlusion
+                  <span class="text-[10px] text-slate-400">(LOS Blockage into permanently shadowed crater)</span>
+                </label>
+                <span id="slider-2-val" class="font-mono text-amber-400 font-bold">35% Rim Occluded</span>
+              </div>
+              <input id="slider-occlusion" type="range" min="0" max="100" value="35" class="w-full h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-amber-400" />
+            </div>
+
+            <!-- Parameter Slider 3: Dynamic Multipath / Plasma Delay Spread -->
+            <div>
+              <div class="flex justify-between text-slate-300 mb-1">
+                <label class="font-medium flex items-center gap-1 text-[11px]" id="slider-3-label">
+                  Multipath Delay Spread & Fading Fluctuation
+                  <span class="text-[10px] text-slate-400">(Simulated regolith bounce / plasma sheath)</span>
+                </label>
+                <span id="slider-3-val" class="font-mono text-purple-400 font-bold">120 ns (Mild Rician)</span>
+              </div>
+              <input id="slider-multipath" type="range" min="20" max="800" value="120" class="w-full h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-purple-400" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Real-time Action buttons -->
+        <div class="flex items-center justify-between pt-2.5 border-t border-lunar-border/80 mt-2.5">
+          <button onclick="toggleSwarmDrive()" id="btn-swarm-drive" class="px-3 py-1.5 bg-gradient-to-r from-sky-600 to-cyan-500 hover:from-sky-500 hover:to-cyan-400 text-white rounded text-xs font-bold flex items-center space-x-1.5 shadow transition">
+            <i data-lucide="play" class="w-3.5 h-3.5" id="swarm-drive-icon"></i>
+            <span id="swarm-drive-label">Animate Swarm Agents</span>
+          </button>
+          
+          <button onclick="triggerAutonomousAction()" id="btn-trigger-action" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 rounded text-xs font-mono transition">
+            Force Policy Optimization
+          </button>
+        </div>
+
+      </div>
+
+      <!-- MISSION TELEMETRY LOG -->
+      <div class="bg-lunar-panel border border-lunar-border rounded-xl p-3 shadow-lg">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+            <i data-lucide="terminal" class="w-4 h-4 text-lunar-cyan"></i>
+            Artemis Cognitive Spectrum Decision Stream
+          </span>
+          <button onclick="clearEventLog()" class="text-[10px] text-slate-400 hover:text-slate-200 underline font-mono">Clear</button>
+        </div>
+        <div id="event-log-box" class="h-28 overflow-y-auto space-y-1 font-mono text-[11px] bg-[#03060e] p-2 rounded border border-lunar-border/70">
+          <!-- Populated dynamically via emitLog() -->
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <footer class="bg-black/95 border-t border-lunar-border px-4 py-2 flex flex-col sm:flex-row items-center justify-between text-xs font-mono gap-2 z-50">
+    <div class="flex items-center space-x-2 w-full sm:w-auto">
+      <span class="text-lunar-cyan font-bold flex items-center gap-1">
+        <i data-lucide="radio" class="w-3.5 h-3.5 text-sky-400"></i> COGNITIVE TELEMETRY:
+      </span>
+      <span id="footer-status-text" class="text-slate-300 truncate max-w-[850px]">
+        [ENGINE 1 ENGAGED] Autonomous Reinforcement Learning allocated clean 2.412 GHz channel. SINR: +19.8 dB. Policy response: 0.34 ms.
+      </span>
+    </div>
+    <div class="flex items-center space-x-3 text-[11px] text-slate-400 shrink-0">
+      <span class="text-emerald-400 font-semibold">TRL 7 Edge Cognitive PHY</span>
+      <span>•</span>
+      <span class="text-purple-400 font-semibold">Decentralized Multi-Agent Swarm</span>
+    </div>
+  </footer>
+
+  <script>
+    // Initialize icons
+    lucide.createIcons();
+
+    // --------------------------------------------------------------------------
+    // THE 4 BREAKTHROUGH INNOVATIONS DATA MODEL
+    // --------------------------------------------------------------------------
+    const Innovations = {
+      1: {
+        title: "Autonomous Reinforcement Learning RF Spectral Deconfliction Engine",
+        domain: "Cognitive PHY & Waveforms",
+        costTimeline: "$4.2M to $5.5M (24 Months to TRL 7)",
+        novelty: "Real-time, edge-hosted deep reinforcement learning engine that autonomously monitors, deconflicts, and re-allocates RF communication channels across contested or congested spectrum bands without relying on central base stations. Its novelty is sub-millisecond autonomous policy switching under hostile multipath fading.",
+        nasaMissed: "Historical planetary flight communications strictly relied on pre-coordinated, deterministic ground tracking regimes and static frequency coordination.",
+        industryMissed: "Motorola and L3Harris legacy revenues relied on selling proprietary P25 trunked repeaters with static 12.5 kHz channel rasters rather than dynamic cognitive PHYs.",
+        artemisImpact: "Autonomously deconflicts communications between lunar rovers, landers, and scientific payloads in real time during multi-agent surface traverses.",
+        responderImpact: "Dynamically circumvents intentional jamming and heavy co-channel congestion during large-scale urban disaster responses without dispatchers.",
+        badge: "SUB-MS EDGE RL",
+        actionBtn: "Force Deep RL Re-allocation",
+        activeWaveform: "16-QAM (Contention-Free)"
+      },
+      2: {
+        title: "Disruption-Tolerant Cognitive Mesh Routing Protocol (DTN-Mesh)",
+        domain: "Mesh & Routing Protocols",
+        costTimeline: "$3.8M to $4.9M (20 Months to TRL 7)",
+        novelty: "Decentralized cognitive bundle-routing protocol that dynamically predicts physical link drops and autonomously routes emergency telemetry across intermittent, opportunistic peer-to-peer radio hops. Fuses store-and-forward bundles with predictive RF topology mapping for surface swarms.",
+        nasaMissed: "NASA historically restricted store-and-forward bundle protocols strictly to scheduled deep-space relay contacts rather than high-tempo multi-agent surface swarms.",
+        industryMissed: "Public safety vendors prioritized high-margin regional simulcast tower networks rather than self-healing decentralized ad-hoc mesh software.",
+        artemisImpact: "Ensures uninterrupted scientific data return from lunar crater exploration teams when line-of-sight to the lunar gateway or orbital relay is temporarily shadowed.",
+        responderImpact: "Keeps firefighters and paramedics connected inside underground transit tunnels and collapsed structures where repeater signals cannot penetrate.",
+        badge: "PREDICTIVE BUNDLE ROUTE",
+        actionBtn: "Trigger Intermittent Hop Route",
+        activeWaveform: "BPv7 Mesh Frame (Cooperative)"
+      },
+      3: {
+        title: "Sub-Millisecond Dynamic Physical-Layer Waveform Morphing Engine",
+        domain: "Cognitive PHY & Waveforms",
+        costTimeline: "$5.1M to $6.4M (30 Months to TRL 7)",
+        novelty: "Ultra-fast software-defined radio (SDR) physical layer engine that morphs modulation schemes (from PSK to spread-spectrum chirp) in sub-milliseconds in response to instantaneous signal-to-noise ratio degradation while preserving a continuous non-coherent bitstream.",
+        nasaMissed: "NASA enforced strict flight-heritage requirements that locked mission architectures into fixed modulation hardware unable to morph in-flight.",
+        industryMissed: "Commercial vendors remained anchored to rigid APCO Project 25 C4FM/CQPSK modulation profiles that forbid non-standard dynamic modulation reshaping.",
+        artemisImpact: "Prevents communications blackouts during spacecraft atmospheric re-entry and planetary entry-descent-landing (EDL) through fluctuating plasma sheaths.",
+        responderImpact: "Maintains continuous bi-directional voice links for emergency vehicles moving at high speeds through severe urban multipath canyons.",
+        badge: "CHIRP / PSK MORPHING",
+        actionBtn: "Morph Waveform: PSK ↔ Chirp",
+        activeWaveform: "CSS Chirp Spread Spectrum"
+      },
+      4: {
+        title: "Distributed Multi-Agent RF Crowdsensing & Cooperative Spectrum Mapper",
+        domain: "RF Sensing & Micro-Jamming",
+        costTimeline: "$3.6M to $4.8M (18 Months to TRL 7)",
+        novelty: "Distributed crowdsensing agent turning every deployed transceiver into a passive spectral sensor, aggregating localized RF noise floors into a unified real-time 3D electromagnetic environment map via federated low-overhead spectral tomography without sacrificing payload bandwidth.",
+        nasaMissed: "Planetary missions historically operated isolated single-point transponders, never pooling passive background RF observations into a cooperative spatial map.",
+        industryMissed: "Legacy manufacturers treat subscriber radios strictly as audio endpoints and monetize manual physical drive-testing services instead of crowdsourcing.",
+        artemisImpact: "Provides Artemis lunar base camp controllers with a real-time electromagnetic operating picture to track interference and locate malfunctioning payloads.",
+        responderImpact: "Enables emergency dispatchers to instantly identify illegal signal jammers or accidental industrial interference knocking out hospital EMS channels.",
+        badge: "3D SPECTRAL TOMOGRAPHY",
+        actionBtn: "Aggregate Federated RF Noise Map",
+        activeWaveform: "Passive Wideband Sensing"
+      }
+    };
+
+    // Global State
+    const State = {
+      activeInnovation: 1,
+      contentionLevel: 15, // 0 - 100%
+      craterOcclusion: 35, // 0 - 100%
+      delaySpreadNs: 120, // 20 - 800 ns
+      isSwarmAnimating: true,
+      swarmProgress: 0.1,
+      audioEnabled: false,
+
+      // Live metrics
+      sinrDb: 19.8,
+      latencyMs: 0.34,
+      deliveryRatio: 99.8,
+      evmPercent: 2.4,
+      currentWaveform: "16-QAM",
+      jammingActive: false,
+      rlChannelAllocated: 1 // 1, 6, 11
+    };
+
+    // --------------------------------------------------------------------------
+    // TONE.JS SONIFICATION ENGINE
+    // --------------------------------------------------------------------------
+    let audioGain = null;
+    let carrierOsc = null;
+    let chirperSynth = null;
+
+    function initAudio() {
+      if (carrierOsc) return;
+      try {
+        audioGain = new Tone.Gain(0.08).toDestination();
+
+        carrierOsc = new Tone.Oscillator(440, "sine");
+        carrierOsc.connect(audioGain);
+
+        chirperSynth = new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'sine' },
+          envelope: { attack: 0.005, decay: 0.05, sustain: 0.02, release: 0.08 }
+        }).connect(audioGain);
+
+        carrierOsc.start();
+        updateAudioTone();
+      } catch (err) {
+        console.warn("Audio start gesture deferred:", err);
+      }
+    }
+
+    function toggleAudio() {
+      if (!State.audioEnabled) {
+        Tone.start();
+        initAudio();
+        State.audioEnabled = true;
+        document.getElementById('audio-label').textContent = 'Sonification: ON';
+        document.getElementById('btn-audio').classList.add('bg-sky-950', 'text-sky-300', 'border', 'border-sky-500');
+        playAudioChirp([520, 680, 860]);
+      } else {
+        State.audioEnabled = false;
+        if (carrierOsc) {
+          carrierOsc.stop();
+          carrierOsc = null;
+        }
+        document.getElementById('audio-label').textContent = 'Sonification: OFF';
+        document.getElementById('btn-audio').classList.remove('bg-sky-950', 'text-sky-300', 'border', 'border-sky-500');
+      }
+    }
+
+    function playAudioChirp(freqs = [440, 660]) {
+      if (!State.audioEnabled || !chirperSynth) return;
+      try {
+        const now = Tone.now();
+        freqs.forEach((f, i) => {
+          chirperSynth.triggerAttackRelease(f, '32n', now + i * 0.04);
+        });
+      } catch (e) {}
+    }
+
+    function updateAudioTone() {
+      if (!State.audioEnabled || !carrierOsc) return;
+      try {
+        const freqMap = { 1: 480, 2: 640, 3: 880, 4: 360 };
+        const basePitch = freqMap[State.activeInnovation] || 480;
+
+        if (State.jammingActive) {
+          carrierOsc.frequency.rampTo(160, 0.05);
+          audioGain.gain.rampTo(0.03, 0.05);
+        } else {
+          carrierOsc.frequency.rampTo(basePitch + (State.sinrDb * 4), 0.08);
+          audioGain.gain.rampTo(0.07, 0.08);
+        }
+      } catch(e) {}
+    }
+  </script>
+
+  <script>
+    let scene, camera, renderer;
+    let moonMesh, contourWireMesh;
+    let baseCampHLSGroup, ltvRoverGroup, viperScoutGroup, gatewayGroup, jammerGroup;
+    let rayLines = {};
+    let cameraMode = 'overview';
+    const container3D = document.getElementById('three-container');
+
+    function init3D() {
+      const w = container3D.clientWidth;
+      const h = container3D.clientHeight;
+
+      scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x020617, 0.010);
+
+      camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
+      camera.position.set(0, 48, 86);
+      camera.lookAt(0, 4, 0);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(w, h);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      container3D.appendChild(renderer.domElement);
+
+      // Deep Space Starfield
+      createStars();
+
+      // Polar Sun Light (Low elevation polar grazing sun)
+      const sun = new THREE.DirectionalLight(0xfffaee, 2.7);
+      sun.position.set(110, 24, -75);
+      scene.add(sun);
+
+      // Faint Earthshine & Lunar Regolith Ambient Light
+      const ambient = new THREE.AmbientLight(0x132238, 0.95);
+      scene.add(ambient);
+
+      // Generate Procedural South Pole DEM Terrain (Shackleton Rim Profile + Shadowed Depressions)
+      buildLunarDEM();
+
+      // 1. Artemis Base Camp HLS Habitat on Rim Plateau
+      baseCampHLSGroup = createBaseCampModel();
+      baseCampHLSGroup.position.set(-22, 7.8, -10);
+      scene.add(baseCampHLSGroup);
+
+      // 2. Swarm Agent A: LTV-1 Crewed Rover (High Rim Traverser)
+      ltvRoverGroup = createRoverModel('LTV-1', 0x38bdf8);
+      scene.add(ltvRoverGroup);
+
+      // 3. Swarm Agent B: VIPER Robotic Scout (Permanent Crater Shadow Explorer)
+      viperScoutGroup = createViperScoutModel('VIPER-2', 0xc084fc);
+      scene.add(viperScoutGroup);
+
+      // 4. Lunar Gateway Orbiter (NRHO High Halo)
+      gatewayGroup = createGatewayModel();
+      scene.add(gatewayGroup);
+
+      // 5. Hostile Jammer / Contested Emission Source (Dynamic)
+      jammerGroup = createJammerModel();
+      jammerGroup.position.set(12, 1.5, 14);
+      scene.add(jammerGroup);
+
+      // Build Dynamic Raypaths for all 4 Innovations
+      buildSpatialRayLines();
+
+      // Setup Orbit Controls
+      setupCameraInteractions();
+
+      window.addEventListener('resize', onWindowResize);
+    }
+
+    function createStars() {
+      const count = 1600;
+      const geo = new THREE.BufferGeometry();
+      const pos = new Float32Array(count * 3);
+      for (let i = 0; i < count * 3; i++) {
+        pos[i] = (Math.random() - 0.5) * 600;
+      }
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const mat = new THREE.PointsMaterial({ color: 0x94a3b8, size: 0.8 });
+      scene.add(new THREE.Points(geo, mat));
+    }
+
+    function buildLunarDEM() {
+      const size = 130;
+      const segments = 100;
+      const geo = new THREE.PlaneGeometry(size, size, segments, segments);
+      geo.rotateX(-Math.PI / 2);
+
+      const pos = geo.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const z = pos.getZ(i);
+
+        // Crater 1: Shackleton (deep bowl centered around -8, +2)
+        const d1 = Math.sqrt((x + 8) * (x + 8) + (z - 2) * (z - 2));
+        let h1 = 0;
+        if (d1 < 22) {
+          const norm = d1 / 22;
+          h1 = -16 * (1 - norm * norm);
+        } else if (d1 < 32) {
+          const rim = (d1 - 22) / 10;
+          h1 = Math.sin(rim * Math.PI) * 7.8;
+        }
+
+        // Secondary Crater Depression (centered at +16, -18)
+        const d2 = Math.sqrt((x - 16) * (x - 16) + (z + 18) * (z + 18));
+        let h2 = 0;
+        if (d2 < 18) {
+          const norm2 = d2 / 18;
+          h2 = -12 * (1 - norm2 * norm2);
+        }
+
+        // High Peak (Malapert Mountain ridge around +24, +14)
+        const d3 = Math.sqrt((x - 24) * (x - 24) + (z - 14) * (z - 14));
+        let h3 = Math.max(0, (14 - d3) * 0.75);
+
+        // Regolith micro-roughness
+        const micro = (Math.sin(x * 0.4) + Math.cos(z * 0.4)) * 0.45;
+
+        pos.setY(i, h1 + h2 + h3 + micro);
+      }
+      geo.computeVertexNormals();
+
+      const regolithMat = new THREE.MeshStandardMaterial({
+        color: 0x1f2838,
+        roughness: 0.92,
+        metalness: 0.18,
+        flatShading: true
+      });
+
+      moonMesh = new THREE.Mesh(geo, regolithMat);
+      scene.add(moonMesh);
+
+      // Wireframe contour lines
+      const wireMat = new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.05
+      });
+      contourWireMesh = new THREE.Mesh(geo, wireMat);
+      contourWireMesh.position.y += 0.03;
+      scene.add(contourWireMesh);
+    }
+
+    function createBaseCampModel() {
+      const g = new THREE.Group();
+
+      // Habitat Dome
+      const domeGeo = new THREE.SphereGeometry(2.5, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2);
+      const domeMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.3, metalness: 0.7 });
+      const dome = new THREE.Mesh(domeGeo, domeMat);
+      g.add(dome);
+
+      // Comm Tower Mast
+      const mastGeo = new THREE.CylinderGeometry(0.12, 0.2, 7.5, 8);
+      const mastMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8 });
+      const mast = new THREE.Mesh(mastGeo, mastMat);
+      mast.position.set(0, 3.75, 0);
+      g.add(mast);
+
+      // Top SDR Antenna Beacon
+      const bGeo = new THREE.SphereGeometry(0.4, 12, 12);
+      const bMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
+      const beacon = new THREE.Mesh(bGeo, bMat);
+      beacon.position.set(0, 7.6, 0);
+      g.add(beacon);
+
+      return g;
+    }
+
+    function createRoverModel(name, colorHex) {
+      const g = new THREE.Group();
+
+      // Chassis
+      const cGeo = new THREE.BoxGeometry(2.2, 0.8, 3.2);
+      const cMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.8 });
+      const chassis = new THREE.Mesh(cGeo, cMat);
+      chassis.position.y = 0.9;
+      g.add(chassis);
+
+      // 4 Wire-mesh wheels
+      const wGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 12);
+      const wMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.9 });
+      [[-1.2, 0.5, 1.1], [1.2, 0.5, 1.1], [-1.2, 0.5, -1.1], [1.2, 0.5, -1.1]].forEach(p => {
+        const w = new THREE.Mesh(wGeo, wMat);
+        w.rotation.z = Math.PI / 2;
+        w.position.set(...p);
+        g.add(w);
+      });
+
+      // Steerable High-gain phased array
+      const dishGeo = new THREE.CylinderGeometry(0.65, 0.1, 0.2, 16);
+      const dishMat = new THREE.MeshStandardMaterial({ color: colorHex, emissive: 0x0284c7 });
+      const dish = new THREE.Mesh(dishGeo, dishMat);
+      dish.position.set(0, 2.5, 0.4);
+      dish.rotation.x = 0.5;
+      g.add(dish);
+
+      return g;
+    }
+
+    function createViperScoutModel(name, colorHex) {
+      const g = new THREE.Group();
+
+      // Tall robotic body
+      const cGeo = new THREE.BoxGeometry(1.6, 1.8, 1.8);
+      const cMat = new THREE.MeshStandardMaterial({ color: 0xd8b4fe, metalness: 0.7 });
+      const body = new THREE.Mesh(cGeo, cMat);
+      body.position.y = 1.3;
+      g.add(body);
+
+      // Wheels
+      const wGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.35, 12);
+      const wMat = new THREE.MeshStandardMaterial({ color: 0x1e1b4b, metalness: 0.8 });
+      [[-1.0, 0.45, 0.8], [1.0, 0.45, 0.8], [-1.0, 0.45, -0.8], [1.0, 0.45, -0.8]].forEach(p => {
+        const w = new THREE.Mesh(wGeo, wMat);
+        w.rotation.z = Math.PI / 2;
+        w.position.set(...p);
+        g.add(w);
+      });
+
+      // Science Drill & Mast
+      const mastGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.8, 8);
+      const mastMat = new THREE.MeshStandardMaterial({ color: 0xa855f7 });
+      const mast = new THREE.Mesh(mastGeo, mastMat);
+      mast.position.set(0, 3.2, 0);
+      g.add(mast);
+
+      // Antenna Puck
+      const puckGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.15, 12);
+      const puckMat = new THREE.MeshBasicMaterial({ color: colorHex });
+      const puck = new THREE.Mesh(puckGeo, puckMat);
+      puck.position.set(0, 4.6, 0);
+      g.add(puck);
+
+      return g;
+    }
+
+    function createGatewayModel() {
+      const g = new THREE.Group();
+
+      const coreGeo = new THREE.CylinderGeometry(1.0, 1.0, 4.0, 16);
+      const coreMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, metalness: 0.9, roughness: 0.1 });
+      const core = new THREE.Mesh(coreGeo, coreMat);
+      core.rotation.z = Math.PI / 2;
+      g.add(core);
+
+      const wingGeo = new THREE.BoxGeometry(8.5, 0.08, 1.5);
+      const wingMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.7 });
+      const wing = new THREE.Mesh(wingGeo, wingMat);
+      g.add(wing);
+
+      const feedGeo = new THREE.ConeGeometry(0.6, 1.0, 16);
+      const feedMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+      const feed = new THREE.Mesh(feedGeo, feedMat);
+      feed.rotation.x = Math.PI;
+      feed.position.set(0, -1.4, 0);
+      g.add(feed);
+
+      g.position.set(-18, 42, 18);
+      return g;
+    }
+
+    function createJammerModel() {
+      const g = new THREE.Group();
+      const pGeo = new THREE.ConeGeometry(0.6, 1.8, 8);
+      const pMat = new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0x7f1d1d });
+      const p = new THREE.Mesh(pGeo, pMat);
+      g.add(p);
+
+      const ringGeo = new THREE.RingGeometry(0.8, 1.1, 16);
+      ringGeo.rotateX(-Math.PI / 2);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0xf87171, side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.position.y = 0.2;
+      g.add(ring);
+
+      return g;
+    }
+
+    function buildSpatialRayLines() {
+      // 1. Clean Carrier Ray (LTV Rover to Base Camp Tower)
+      const r1Mat = new THREE.LineBasicMaterial({ color: 0x10b981, linewidth: 3 });
+      const r1Geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+      rayLines.carrier = new THREE.Line(r1Geo, r1Mat);
+      scene.add(rayLines.carrier);
+
+      // 2. DTN Mesh Hop Ray (LTV-1 Rover down to VIPER in deep crater)
+      const r2Mat = new THREE.LineBasicMaterial({ color: 0xc084fc, linewidth: 3 });
+      const r2Geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+      rayLines.dtnHop = new THREE.Line(r2Geo, r2Mat);
+      scene.add(rayLines.dtnHop);
+
+      // 3. Morphed Waveform Ray (VIPER to Gateway Orbit through severe occlusion)
+      const r3Mat = new THREE.LineBasicMaterial({ color: 0xec4899, linewidth: 3 });
+      const r3Geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+      rayLines.morphed = new THREE.Line(r3Geo, r3Mat);
+      scene.add(rayLines.morphed);
+
+      // 4. Jammer Emission Ray (Hostile Interference Line)
+      const r4Mat = new THREE.LineDashedMaterial({ color: 0xf87171, dashSize: 1.5, gapSize: 0.8, linewidth: 2 });
+      const r4Geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+      rayLines.jam = new THREE.Line(r4Geo, r4Mat);
+      scene.add(rayLines.jam);
+
+      // 5. Crowdsensing Tomography Grid Rays
+      const csMat = new THREE.LineDashedMaterial({ color: 0xfbbf24, dashSize: 2, gapSize: 1, linewidth: 2 });
+      const csGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(-22, 7.8, -10),
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(12, 1.5, 14),
+        new THREE.Vector3(-22, 7.8, -10)
+      ]);
+      rayLines.crowdsense = new THREE.Line(csGeo, csMat);
+      scene.add(rayLines.crowdsense);
+    }
+
+    function update3DScenePhysics() {
+      if (State.isSwarmAnimating) {
+        State.swarmProgress += 0.0022;
+        if (State.swarmProgress > 1.0) State.swarmProgress = 0.0;
+      }
+
+      const t = State.swarmProgress * Math.PI * 2;
+
+      // LTV-1 traverses high crater rim
+      const ltvX = -8 + Math.cos(t) * 18;
+      const ltvZ = 2 + Math.sin(t) * 16;
+      let ltvY = 7.2 + Math.sin(t * 3) * 0.8;
+      ltvRoverGroup.position.set(ltvX, ltvY, ltvZ);
+      ltvRoverGroup.rotation.y = -t + Math.PI / 2;
+
+      // VIPER travels inside permanently shadowed crater floor (affected by occlusion slider)
+      const viperX = -8 + Math.cos(t + 1.6) * (8 + (State.craterOcclusion * 0.08));
+      const viperZ = 2 + Math.sin(t + 1.6) * (7 + (State.craterOcclusion * 0.08));
+      const viperY = -14.2 + (100 - State.craterOcclusion) * 0.08;
+      viperScoutGroup.position.set(viperX, viperY, viperZ);
+      viperScoutGroup.rotation.y = -(t + 1.6);
+
+      // Gateway slow halo orbit
+      const orbTime = Date.now() * 0.0003;
+      gatewayGroup.position.set(
+        Math.sin(orbTime) * 32 - 10,
+        42 + Math.sin(orbTime * 2) * 4,
+        Math.cos(orbTime) * 28 + 6
+      );
+
+      // Node connection points
+      const baseTop = baseCampHLSGroup.position.clone().add(new THREE.Vector3(0, 7.6, 0));
+      const ltvAntenna = ltvRoverGroup.position.clone().add(new THREE.Vector3(0, 2.5, 0));
+      const viperAntenna = viperScoutGroup.position.clone().add(new THREE.Vector3(0, 4.6, 0));
+      const gatewayFeed = gatewayGroup.position.clone().add(new THREE.Vector3(0, -1.4, 0));
+      const jammerPt = jammerGroup.position.clone().add(new THREE.Vector3(0, 1.8, 0));
+
+      // 1. Carrier Ray (LTV to Base)
+      const p1 = rayLines.carrier.geometry.attributes.position.array;
+      p1[0] = ltvAntenna.x; p1[1] = ltvAntenna.y; p1[2] = ltvAntenna.z;
+      p1[3] = baseTop.x; p1[4] = baseTop.y; p1[5] = baseTop.z;
+      rayLines.carrier.geometry.attributes.position.needsUpdate = true;
+
+      // 2. DTN Mesh Hop Ray (LTV to VIPER peer hop)
+      const p2 = rayLines.dtnHop.geometry.attributes.position.array;
+      p2[0] = ltvAntenna.x; p2[1] = ltvAntenna.y; p2[2] = ltvAntenna.z;
+      p2[3] = viperAntenna.x; p2[4] = viperAntenna.y; p2[5] = viperAntenna.z;
+      rayLines.dtnHop.geometry.attributes.position.needsUpdate = true;
+
+      // 3. Morphed Waveform Ray (VIPER to Gateway)
+      const p3 = rayLines.morphed.geometry.attributes.position.array;
+      p3[0] = viperAntenna.x; p3[1] = viperAntenna.y; p3[2] = viperAntenna.z;
+      p3[3] = gatewayFeed.x; p3[4] = gatewayFeed.y; p3[5] = gatewayFeed.z;
+      rayLines.morphed.geometry.attributes.position.needsUpdate = true;
+
+      // 4. Jammer Ray (Jammer to Base)
+      const p4 = rayLines.jam.geometry.attributes.position.array;
+      p4[0] = jammerPt.x; p4[1] = jammerPt.y; p4[2] = jammerPt.z;
+      p4[3] = baseTop.x; p4[4] = baseTop.y; p4[5] = baseTop.z;
+      rayLines.jam.geometry.attributes.position.needsUpdate = true;
+      rayLines.jam.computeLineDistances();
+
+      // 5. Crowdsense Mesh Ring
+      const p5 = rayLines.crowdsense.geometry.attributes.position.array;
+      p5[0] = baseTop.x; p5[1] = baseTop.y; p5[2] = baseTop.z;
+      p5[3] = ltvAntenna.x; p5[4] = ltvAntenna.y; p5[5] = ltvAntenna.z;
+      p5[6] = viperAntenna.x; p5[7] = viperAntenna.y; p5[8] = viperAntenna.z;
+      p5[9] = baseTop.x; p5[10] = baseTop.y; p5[11] = baseTop.z;
+      rayLines.crowdsense.geometry.attributes.position.needsUpdate = true;
+      rayLines.crowdsense.computeLineDistances();
+
+      // Dynamic visibility based on selected innovation
+      rayLines.carrier.visible = (State.activeInnovation === 1 || State.activeInnovation === 4);
+      rayLines.dtnHop.visible = (State.activeInnovation === 2 || State.activeInnovation === 4);
+      rayLines.morphed.visible = (State.activeInnovation === 3 || State.activeInnovation === 4);
+      rayLines.jam.visible = (State.contentionLevel > 20 || State.jammingActive);
+      rayLines.crowdsense.visible = (State.activeInnovation === 4);
+      jammerGroup.visible = (State.contentionLevel > 10 || State.jammingActive);
+    }
+
+    let isMouseDown = false;
+    let prevMouse = { x: 0, y: 0 };
+    let camSpherical = { theta: 0.28, phi: 1.15, radius: 95 };
+
+    function setupCameraInteractions() {
+      const dom = renderer.domElement;
+
+      dom.addEventListener('mousedown', e => {
+        isMouseDown = true;
+        prevMouse = { x: e.clientX, y: e.clientY };
+      });
+      window.addEventListener('mouseup', () => { isMouseDown = false; });
+      window.addEventListener('mousemove', e => {
+        if (!isMouseDown) return;
+        const dx = e.clientX - prevMouse.x;
+        const dy = e.clientY - prevMouse.y;
+        prevMouse = { x: e.clientX, y: e.clientY };
+
+        camSpherical.theta -= dx * 0.007;
+        camSpherical.phi = Math.max(0.12, Math.min(Math.PI / 2 - 0.04, camSpherical.phi - dy * 0.007));
+        updateCameraView();
+      });
+
+      // Touch events for mobile/tablet
+      dom.addEventListener('touchstart', e => {
+        if (e.touches.length === 1) {
+          isMouseDown = true;
+          prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+      }, { passive: true });
+      window.addEventListener('touchend', () => { isMouseDown = false; });
+      window.addEventListener('touchmove', e => {
+        if (!isMouseDown || e.touches.length !== 1) return;
+        const dx = e.touches[0].clientX - prevMouse.x;
+        const dy = e.touches[0].clientY - prevMouse.y;
+        prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+
+        camSpherical.theta -= dx * 0.007;
+        camSpherical.phi = Math.max(0.12, Math.min(Math.PI / 2 - 0.04, camSpherical.phi - dy * 0.007));
+        updateCameraView();
+      }, { passive: true });
+
+      // Wheel zoom
+      dom.addEventListener('wheel', e => {
+        e.preventDefault();
+        camSpherical.radius = Math.max(22, Math.min(160, camSpherical.radius + e.deltaY * 0.06));
+        updateCameraView();
+      }, { passive: false });
+
+      updateCameraView();
+    }
+
+    function updateCameraView() {
+      if (cameraMode === 'overview') {
+        camera.position.x = camSpherical.radius * Math.sin(camSpherical.phi) * Math.sin(camSpherical.theta);
+        camera.position.y = camSpherical.radius * Math.cos(camSpherical.phi);
+        camera.position.z = camSpherical.radius * Math.sin(camSpherical.phi) * Math.cos(camSpherical.theta);
+        camera.lookAt(0, 2, 0);
+      } else if (cameraMode === 'rover') {
+        const rp = ltvRoverGroup.position;
+        camera.position.set(rp.x - 7, rp.y + 4.5, rp.z + 8);
+        camera.lookAt(rp.x, rp.y + 1.5, rp.z);
+      } else if (cameraMode === 'crater') {
+        const vp = viperScoutGroup.position;
+        camera.position.set(vp.x - 6, vp.y + 5, vp.z + 8);
+        camera.lookAt(vp.x, vp.y + 2, vp.z);
+      } else if (cameraMode === 'gateway') {
+        const gp = gatewayGroup.position;
+        camera.position.set(gp.x + 8, gp.y + 6, gp.z + 10);
+        camera.lookAt(ltvRoverGroup.position.x, ltvRoverGroup.position.y, ltvRoverGroup.position.z);
+      }
+    }
+
+    function setCameraPreset(mode) {
+      cameraMode = mode;
+      ['overview', 'rover', 'crater', 'gateway'].forEach(m => {
+        const btn = document.getElementById(`cam-${m}`);
+        if (m === mode) {
+          btn.className = 'px-2 py-0.5 bg-sky-500/20 text-sky-300 rounded font-mono hover:bg-sky-500/30 transition text-[11px]';
+        } else {
+          btn.className = 'px-2 py-0.5 text-slate-400 rounded font-mono hover:bg-lunar-border transition text-[11px]';
+        }
+      });
+      updateCameraView();
+    }
+
+    function onWindowResize() {
+      const w = container3D.clientWidth;
+      const h = container3D.clientHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+      resizeCanvases();
+    }
+  </script>
+
+  <script>
+    const spectrumCanvas = document.getElementById('spectrum-canvas');
+    const spectrumCtx = spectrumCanvas.getContext('2d');
+    const iqCanvas = document.getElementById('iq-canvas');
+    const iqCtx = iqCanvas.getContext('2d');
+
+    function resizeCanvases() {
+      spectrumCanvas.width = spectrumCanvas.parentElement.clientWidth;
+      spectrumCanvas.height = spectrumCanvas.parentElement.clientHeight - 24;
+      iqCanvas.width = 112;
+      iqCanvas.height = 112;
+    }
+
+    function renderSpectralDisplay() {
+      const w = spectrumCanvas.width;
+      const h = spectrumCanvas.height;
+      if (!w || !h) return;
+
+      spectrumCtx.fillStyle = '#030712';
+      spectrumCtx.fillRect(0, 0, w, h);
+
+      // Grid Lines
+      spectrumCtx.strokeStyle = 'rgba(30, 46, 77, 0.45)';
+      spectrumCtx.lineWidth = 1;
+      spectrumCtx.beginPath();
+      for (let x = 0; x <= w; x += w / 8) {
+        spectrumCtx.moveTo(x, 0); spectrumCtx.lineTo(x, h);
+      }
+      for (let y = 0; y <= h; y += h / 4) {
+        spectrumCtx.moveTo(0, y); spectrumCtx.lineTo(w, y);
+      }
+      spectrumCtx.stroke();
+
+      if (State.activeInnovation === 4) {
+        // Tomography heat line profile
+        spectrumCtx.strokeStyle = '#fbbf24';
+        spectrumCtx.lineWidth = 2;
+        spectrumCtx.beginPath();
+        for (let x = 0; x < w; x += 4) {
+          const noise = Math.sin(x * 0.05 + Date.now() * 0.002) * 14 + (Math.random() - 0.5) * 6;
+          const y = h * 0.65 - noise;
+          if (x === 0) spectrumCtx.moveTo(x, y); else spectrumCtx.lineTo(x, y);
+        }
+        spectrumCtx.stroke();
+        return;
+      }
+
+      // Draw 3 Channel bands (Ch 1, Ch 6, Ch 11)
+      const ch1X = w * 0.22;
+      const ch6X = w * 0.50;
+      const ch11X = w * 0.78;
+
+      // Channel 1 (Autonomous RL Deconflicted Carrier)
+      drawSpectralPeak(ch1X, 0.88, State.rlChannelAllocated === 1 ? '#10b981' : '#64748b', 'Ch 1 (2.412 GHz)');
+
+      // Channel 6 (Contested / Jammer Band)
+      const jamAmp = (State.contentionLevel / 100) * 0.95;
+      if (jamAmp > 0.05) {
+        drawSpectralPeak(ch6X, jamAmp, '#f87171', 'Ch 6 (Contested)');
+      } else {
+        drawSpectralPeak(ch6X, 0.12, '#334155', 'Ch 6 (Clear)');
+      }
+
+      // Channel 11 (Mesh / Secondary)
+      drawSpectralPeak(ch11X, 0.65, State.rlChannelAllocated === 11 ? '#10b981' : '#c084fc', 'Ch 11 (2.462 GHz)');
+    }
+
+    function drawSpectralPeak(centerX, heightRatio, color, label) {
+      const h = spectrumCanvas.height;
+      const peakH = heightRatio * (h - 14);
+      const span = 28;
+
+      spectrumCtx.fillStyle = color;
+      spectrumCtx.globalAlpha = 0.25;
+      spectrumCtx.beginPath();
+      spectrumCtx.moveTo(centerX - span, h);
+      spectrumCtx.quadraticCurveTo(centerX, h - peakH, centerX + span, h);
+      spectrumCtx.fill();
+
+      spectrumCtx.globalAlpha = 1.0;
+      spectrumCtx.strokeStyle = color;
+      spectrumCtx.lineWidth = 2;
+      spectrumCtx.beginPath();
+      spectrumCtx.moveTo(centerX - span, h);
+      spectrumCtx.quadraticCurveTo(centerX, h - peakH, centerX + span, h);
+      spectrumCtx.stroke();
+    }
+
+    function renderIQScatterOrTomography() {
+      const w = iqCanvas.width;
+      const h = iqCanvas.height;
+      if (!w || !h) return;
+
+      iqCtx.fillStyle = '#030712';
+      iqCtx.fillRect(0, 0, w, h);
+
+      // Axes
+      iqCtx.strokeStyle = 'rgba(30, 46, 77, 0.8)';
+      iqCtx.lineWidth = 1;
+      iqCtx.beginPath();
+      iqCtx.moveTo(w / 2, 0); iqCtx.lineTo(w / 2, h);
+      iqCtx.moveTo(0, h / 2); iqCtx.lineTo(w, h / 2);
+      iqCtx.stroke();
+
+      const cx = w / 2;
+      const cy = h / 2;
+
+      if (State.activeInnovation === 3) {
+        // Waveform Morphing: Chirp frequency spirals or continuous constellation
+        iqCtx.strokeStyle = '#ec4899';
+        iqCtx.lineWidth = 1.5;
+        iqCtx.beginPath();
+        for (let a = 0; a < Math.PI * 4; a += 0.2) {
+          const r = (a / (Math.PI * 4)) * (w * 0.42);
+          const px = cx + Math.cos(a + Date.now() * 0.004) * r;
+          const py = cy + Math.sin(a + Date.now() * 0.004) * r;
+          if (a === 0) iqCtx.moveTo(px, py); else iqCtx.lineTo(px, py);
+        }
+        iqCtx.stroke();
+        return;
+      }
+
+      if (State.activeInnovation === 4) {
+        // 3D Tomography spatial scatter map
+        iqCtx.fillStyle = '#fbbf24';
+        for (let i = 0; i < 18; i++) {
+          const ang = i * 0.35 + (Date.now() * 0.001);
+          const rad = (i * 2.2) % (w * 0.42);
+          iqCtx.fillRect(cx + Math.cos(ang) * rad, cy + Math.sin(ang) * rad, 2, 2);
+        }
+        return;
+      }
+
+      // 16-QAM constellation grid
+      const gridVals = [-0.3, -0.1, 0.1, 0.3];
+      iqCtx.fillStyle = (State.sinrDb < 4) ? '#f87171' : '#38bdf8';
+      const jitter = Math.max(1.2, (25 - State.sinrDb) * 0.45);
+
+      gridVals.forEach(gx => {
+        gridVals.forEach(gy => {
+          const px = cx + gx * w;
+          const py = cy + gy * h;
+          for (let j = 0; j < 4; j++) {
+            const rx = (Math.random() - 0.5) * jitter;
+            const ry = (Math.random() - 0.5) * jitter;
+            iqCtx.fillRect(px + rx, py + ry, 1.5, 1.5);
+          }
+        });
+      });
+    }
+  </script>
+
+  <script>
+    function computeCognitivePhysics() {
+      // 1. SINR calculation based on contention and occlusion
+      let baseSNR = 24.0;
+      const contentionPenalty = (State.contentionLevel * 0.18);
+      const occlusionPenalty = (State.craterOcclusion * 0.12);
+
+      let effectiveSINR = baseSNR - contentionPenalty - occlusionPenalty;
+
+      // Innovation mitigations
+      if (State.activeInnovation === 1) {
+        // RL Deconfliction hops away from interference!
+        effectiveSINR += (State.contentionLevel * 0.14);
+        State.latencyMs = Math.max(0.18, Math.min(0.85, 0.28 + (State.contentionLevel * 0.004)));
+      } else if (State.activeInnovation === 2) {
+        // DTN-Mesh recovers through store-and-forward peer hops!
+        effectiveSINR += (State.craterOcclusion * 0.11);
+        State.deliveryRatio = (100 - (State.contentionLevel * 0.02)).toFixed(1);
+      } else if (State.activeInnovation === 3) {
+        // Waveform morphing into chirp spread spectrum (CSS) overcomes low SINR
+        effectiveSINR += 6.5;
+        State.currentWaveform = (effectiveSINR < 12) ? "CSS Chirp (Morphed)" : "16-QAM (Nominal)";
+      } else if (State.activeInnovation === 4) {
+        // Crowdsensing identifies spatial jammers
+        effectiveSINR += 4.0;
+      }
+
+      State.sinrDb = Math.max(-4.0, Math.round(effectiveSINR * 10) / 10);
+      State.evmPercent = Math.max(1.2, Math.min(35, Math.round((28 - State.sinrDb) * 0.65 * 10) / 10));
+
+      updateHUDView();
+    }
+
+    function updateHUDView() {
+      document.getElementById('hud-sinr').textContent = (State.sinrDb >= 0 ? `+${State.sinrDb}` : `${State.sinrDb}`) + ' dB';
+      document.getElementById('metric-latency').textContent = State.latencyMs.toFixed(2);
+      document.getElementById('metric-delivery').textContent = `${State.deliveryRatio}%`;
+      document.getElementById('metric-evm').textContent = `${State.evmPercent}%`;
+      document.getElementById('metric-waveform').textContent = Innovations[State.activeInnovation].activeWaveform;
+
+      const badge = document.getElementById('metric-latency-badge');
+      badge.textContent = Innovations[State.activeInnovation].badge;
+
+      // Status text
+      const footer = document.getElementById('footer-status-text');
+      const inno = Innovations[State.activeInnovation];
+      footer.textContent = `[ENGINE ${State.activeInnovation}] ${inno.title} | SINR: ${State.sinrDb} dB | Latency: ${State.latencyMs.toFixed(2)} ms | Waveform: ${inno.activeWaveform}`;
+
+      if (State.activeInnovation === 3) {
+        document.getElementById('subgraph-title').textContent = "Waveform Reshaping";
+        document.getElementById('subgraph-tag').textContent = "Continuous Chirp";
+      } else if (State.activeInnovation === 4) {
+        document.getElementById('subgraph-title').textContent = "3D EM Tomography";
+        document.getElementById('subgraph-tag').textContent = "12 Transceivers";
+      } else {
+        document.getElementById('subgraph-title').textContent = "I/Q Constellation";
+        document.getElementById('subgraph-tag').textContent = "16-QAM";
+      }
+    }
+
+    // --------------------------------------------------------------------------
+    // USER INTERACTION & INNOVATION SELECTION
+    // --------------------------------------------------------------------------
+    function selectInnovation(num) {
+      State.activeInnovation = num;
+      const data = Innovations[num];
+
+      // Update 4 Tabs styling
+      for (let i = 1; i <= 4; i++) {
+        const tab = document.getElementById(`tab-innov-${i}`);
+        if (i === num) {
+          tab.className = 'p-2.5 rounded-lg border border-lunar-cyan bg-sky-950/70 text-left transition glow-cyan flex flex-col justify-between';
+        } else {
+          tab.className = 'p-2.5 rounded-lg border border-lunar-border bg-black/40 hover:border-slate-500 text-left transition flex flex-col justify-between';
+        }
+      }
+
+      // Populate Detailed Technical Card
+      document.getElementById('innov-card-title').textContent = `Innovation ${num}: ${data.title}`;
+      document.getElementById('innov-domain-tag').textContent = data.domain;
+      document.getElementById('innov-cost-timeline').textContent = data.costTimeline;
+      document.getElementById('innov-novelty').textContent = data.novelty;
+      document.getElementById('innov-nasa-missed').textContent = data.nasaMissed;
+      document.getElementById('innov-industry-missed').textContent = data.industryMissed;
+      document.getElementById('innov-artemis-impact').textContent = data.artemisImpact;
+      document.getElementById('innov-responder-impact').textContent = data.responderImpact;
+      document.getElementById('btn-trigger-action').textContent = data.actionBtn;
+      document.getElementById('active-ctrl-label').textContent = `Engine ${num}: ${data.title.substring(0, 28)}...`;
+
+      emitLog(`[ENGINE SELECTION] Activated Innovation ${num}: ${data.title}. Initializing SDR edge pipeline.`);
+      playAudioChirp([440, 660, 880]);
+      computeCognitivePhysics();
+      updateAudioTone();
+    }
+
+    function toggleSwarmDrive() {
+      State.isSwarmAnimating = !State.isSwarmAnimating;
+      const label = document.getElementById('swarm-drive-label');
+      const icon = document.getElementById('swarm-drive-icon');
+
+      if (State.isSwarmAnimating) {
+        label.textContent = 'Halt Swarm Agents';
+        icon.setAttribute('data-lucide', 'pause');
+        emitLog('[SWARM RUN] Multi-agent Artemis South Pole traverse in progress.');
+      } else {
+        label.textContent = 'Animate Swarm Agents';
+        icon.setAttribute('data-lucide', 'play');
+        emitLog('[SWARM HALT] Agents anchored at current crater coordinates.');
+      }
+      lucide.createIcons();
+    }
+
+    function triggerAutonomousAction() {
+      if (State.activeInnovation === 1) {
+        State.rlChannelAllocated = (State.rlChannelAllocated === 1) ? 11 : 1;
+        emitLog(`[RL DECONFLICTION] Deep RL Policy switched to Channel ${State.rlChannelAllocated} in 0.32 ms, avoiding co-channel interference!`);
+        playAudioChirp([880, 1040]);
+      } else if (State.activeInnovation === 2) {
+        emitLog('[DTN-MESH] Predicted VIPER crater occlusion. Diverted telemetry bundles via LTV-1 peer-to-peer repeater.');
+        playAudioChirp([620, 820, 1100]);
+      } else if (State.activeInnovation === 3) {
+        emitLog('[WAVEFORM MORPH] Dynamically morphed 16-QAM into Spread-Spectrum Chirp (CSS). Non-coherent bitstream preserved!');
+        playAudioChirp([400, 800, 1200]);
+      } else if (State.activeInnovation === 4) {
+        emitLog('[RF CROWDSENSING] Harvested localized noise floors from 12 swarm nodes. Generated 3D electromagnetic hazard map.');
+        playAudioChirp([500, 750, 950]);
+      }
+      computeCognitivePhysics();
+    }
+
+    function injectHostileInterference() {
+      State.contentionLevel = 90;
+      State.jammingActive = true;
+      document.getElementById('slider-contention').value = 90;
+      document.getElementById('slider-1-val').textContent = '90% Contested (Hostile Jamming)';
+      emitLog('[JAMMER INJECTED] High-power hostile carrier detected on S-Band! Testing sub-ms edge mitigation.');
+      playAudioChirp([320, 210, 140]);
+      computeCognitivePhysics();
+      updateAudioTone();
+    }
+
+    function emitLog(msg) {
+      const box = document.getElementById('event-log-box');
+      if (!box) return;
+
+      const timeStr = new Date().toISOString().substring(11, 19);
+      const row = document.createElement('div');
+      row.className = 'flex items-start gap-1.5 border-b border-lunar-border/50 pb-0.5 text-slate-300';
+      row.innerHTML = `<span class="text-slate-500 font-mono">[${timeStr}]</span> <span>${msg}</span>`;
+      box.prepend(row);
+
+      while (box.children.length > 30) {
+        box.removeChild(box.lastChild);
+      }
+    }
+
+    function clearEventLog() {
+      document.getElementById('event-log-box').innerHTML = '';
+    }
+
+    function exportCognitiveMissionLog() {
+      const report = {
+        mission: "NASA Artemis Cognitive RF & Edge-SDR Mission Telemetry Export",
+        timestamp: new Date().toISOString(),
+        activeInnovation: Innovations[State.activeInnovation],
+        swarmNodes: [
+          { node: "LTV-1 Rover", location: "Shackleton Crater Rim Peak", role: "High-Elevation Mesh Anchor" },
+          { node: "VIPER Scout", location: "Permanently Shadowed Crater Floor", role: "Science Drill / Intermittent DTN Node" },
+          { node: "Base Camp HLS", location: "Ridge Plateau", role: "Central Edge SDR Gateway" }
+        ],
+        liveChannelMetrics: {
+          sinrDb: State.sinrDb,
+          latencyMs: State.latencyMs,
+          deliveryRatioPercent: State.deliveryRatio,
+          evmPercent: State.evmPercent,
+          contentionLevelPercent: State.contentionLevel,
+          craterOcclusionPercent: State.craterOcclusion,
+          delaySpreadNs: State.delaySpreadNs
+        }
+      };
+
+      const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Artemis_Cognitive_RF_Swarm_Log_${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function setupSliderListeners() {
+      const s1 = document.getElementById('slider-contention');
+      s1.addEventListener('input', e => {
+        State.contentionLevel = parseFloat(e.target.value);
+        State.jammingActive = (State.contentionLevel > 60);
+        document.getElementById('slider-1-val').textContent = `${State.contentionLevel}% Contested`;
+        computeCognitivePhysics();
+        updateAudioTone();
+      });
+
+      const s2 = document.getElementById('slider-occlusion');
+      s2.addEventListener('input', e => {
+        State.craterOcclusion = parseFloat(e.target.value);
+        let lbl = 'Mild Occlusion';
+        if (State.craterOcclusion > 70) lbl = 'Deep Shadowed Floor';
+        else if (State.craterOcclusion > 35) lbl = 'Mid-Slope Crater Rim';
+        document.getElementById('slider-2-val').textContent = `${State.craterOcclusion}% (${lbl})`;
+        computeCognitivePhysics();
+      });
+
+      const s3 = document.getElementById('slider-multipath');
+      s3.addEventListener('input', e => {
+        State.delaySpreadNs = parseFloat(e.target.value);
+        document.getElementById('slider-3-val').textContent = `${State.delaySpreadNs} ns`;
+        computeCognitivePhysics();
+      });
+    }
+
+    // --------------------------------------------------------------------------
+    // MAIN ANIMATION LOOP
+    // --------------------------------------------------------------------------
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Update 3D Assets & Dynamic Ray Paths
+      update3DScenePhysics();
+
+      // Render 3D Scene
+      renderer.render(scene, camera);
+
+      // Render 2D Spectrum & Constellation Canvases
+      renderSpectralDisplay();
+      renderIQScatterOrTomography();
+    }
+
+    // Window Load Bootstrap
+    window.addEventListener('load', () => {
+      init3D();
+      resizeCanvases();
+      setupSliderListeners();
+      selectInnovation(1);
+
+      // Seed Telemetry Lines
+      emitLog('[INITIALIZED] NASA Artemis Cognitive RF & Edge-SDR Swarm Console online.');
+      emitLog('[EDGE TRL 7] Autonomous Reinforcement Learning Engine ready on Zynq UltraScale+ FPGA.');
+      emitLog('[DECENTRALIZED] Multi-agent mesh topology initialized across Base Camp, LTV-1, and VIPER.');
+
+      animate();
+    });
+  </script>
+</body>
+</html>
