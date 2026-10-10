@@ -1,0 +1,1461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NASA Artemis Lunar Link: Dynamic Multipath & Regolith Fading Simulator</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js for 3D Lunar Environment, Assets & Ray-Tracing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Tone.js for RF Channel Fading & Audio Sonification -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            lunar: {
+              dark: '#06090e',
+              panel: '#0d131d',
+              card: '#121a27',
+              border: '#1f2e45',
+              accent: '#38bdf8',
+              gold: '#fbbf24',
+              regolith: '#94a3b8',
+              crater: '#1e293b',
+              faded: '#ef4444',
+              locked: '#10b981'
+            }
+          },
+          fontFamily: {
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace']
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    /* Custom aerospace scrollbar */
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #06090e;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1f2e45;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #38bdf8;
+    }
+    .hud-grid {
+      background-size: 28px 28px;
+      background-image: linear-gradient(to right, rgba(56, 189, 248, 0.03) 1px, transparent 1px),
+                        linear-gradient(to bottom, rgba(56, 189, 248, 0.03) 1px, transparent 1px);
+    }
+    .glow-cyan {
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.28);
+    }
+    .glow-red {
+      box-shadow: 0 0 16px rgba(239, 68, 68, 0.35);
+    }
+  </style>
+</head>
+
+<body class="bg-lunar-dark text-slate-100 font-sans min-h-screen flex flex-col overflow-x-hidden selection:bg-lunar-accent selection:text-black hud-grid">
+
+  <!-- TOP HEADER: Mission Time, Artemis South Pole Station, RF Architecture -->
+  <header class="border-b border-lunar-border bg-lunar-panel/90 backdrop-blur sticky top-0 z-50 px-4 py-2 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex items-center space-x-3">
+      <div class="w-10 h-10 rounded-lg bg-sky-950 border border-lunar-accent/40 flex items-center justify-center font-black text-lunar-accent tracking-tighter text-sm glow-cyan">
+        <span>ARTM</span>
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <h1 class="text-sm font-bold tracking-wider text-white uppercase flex items-center gap-2">
+            NASA Artemis Lunar Link Console
+            <span class="text-[10px] bg-sky-900/60 text-sky-300 border border-sky-700/60 px-2 py-0.5 rounded font-mono font-medium">SCaN S7.03</span>
+          </h1>
+        </div>
+        <p class="text-xs text-slate-400">Dynamic Regolith Multipath, Crater Shadowing & Surface-to-Orbit Rician Fading</p>
+      </div>
+    </div>
+
+    <!-- Active Link Target Status -->
+    <div class="flex items-center space-x-3 text-xs font-mono">
+      <div class="flex items-center space-x-2 px-2.5 py-1 rounded bg-black/50 border border-lunar-border">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+        <span class="text-slate-300">Surface Asset:</span>
+        <span class="text-lunar-accent font-bold" id="surface-asset-label">LTV Rover (Shackleton Rim)</span>
+      </div>
+      <div class="flex items-center space-x-2 px-2.5 py-1 rounded bg-black/50 border border-lunar-border">
+        <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+        <span class="text-slate-300">Orbital Relay:</span>
+        <span class="text-lunar-gold font-bold" id="relay-label">Lunar Gateway (NRHO)</span>
+      </div>
+    </div>
+
+    <!-- Top Action Buttons -->
+    <div class="flex items-center space-x-2">
+      <button id="btn-audio" onclick="toggleAudio()" class="px-2.5 py-1.5 bg-lunar-border/70 hover:bg-lunar-border text-slate-300 rounded text-xs flex items-center space-x-1.5 transition">
+        <i data-lucide="volume-2" class="w-3.5 h-3.5 text-lunar-accent"></i>
+        <span id="audio-label" class="font-mono text-[11px]">RF Audio: OFF</span>
+      </button>
+      <button onclick="exportTelemetryReport()" class="px-3 py-1.5 bg-sky-600/30 hover:bg-sky-600/50 text-sky-200 border border-sky-500/40 rounded text-xs font-semibold flex items-center space-x-1.5 transition">
+        <i data-lucide="download" class="w-3.5 h-3.5"></i>
+        <span>Export Log</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN LAYOUT: 3D Viewport (7 Cols), Channel Physical Graphs & AI Solvers (5 Cols) -->
+  <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 overflow-hidden">
+    
+    <!-- LEFT PANE: 3D Lunar Environment, Rover Motion, Ray Tracing (7 Cols) -->
+    <section class="lg:col-span-7 flex flex-col space-y-3">
+      
+      <!-- 3D Ray-Tracing Card -->
+      <div class="relative bg-lunar-panel border border-lunar-border rounded-xl overflow-hidden flex-1 min-h-[420px] shadow-2xl flex flex-col">
+        
+        <!-- Viewport Top Toolbar -->
+        <div class="absolute top-2 left-2 z-10 flex items-center space-x-2 bg-black/70 backdrop-blur px-3 py-1.5 rounded-lg border border-lunar-border text-xs">
+          <span class="text-lunar-accent font-bold flex items-center gap-1.5 font-mono">
+            <i data-lucide="crosshair" class="w-4 h-4 text-sky-400"></i> Ray-Tracing Engine
+          </span>
+          <span class="text-slate-500">|</span>
+          <button onclick="setCameraView('overview')" id="cam-btn-overview" class="px-2 py-0.5 bg-sky-500/20 text-sky-300 rounded font-mono hover:bg-sky-500/30 transition text-[11px]">South Pole</button>
+          <button onclick="setCameraView('rover')" id="cam-btn-rover" class="px-2 py-0.5 text-slate-400 rounded font-mono hover:bg-lunar-border transition text-[11px]">Rover Cam</button>
+          <button onclick="setCameraView('gateway')" id="cam-btn-gateway" class="px-2 py-0.5 text-slate-400 rounded font-mono hover:bg-lunar-border transition text-[11px]">Gateway Track</button>
+        </div>
+
+        <!-- Top Right Link Geometry Badge -->
+        <div class="absolute top-2 right-2 z-10 bg-black/80 backdrop-blur px-3 py-1.5 rounded-lg border border-lunar-border text-[11px] font-mono flex items-center space-x-3">
+          <div><span class="text-slate-400">Elevation:</span> <strong id="val-elevation" class="text-lunar-accent">24.2°</strong></div>
+          <div><span class="text-slate-400">LOS State:</span> <strong id="val-los-status" class="text-emerald-400">UNOBSTRUCTED</strong></div>
+        </div>
+
+        <!-- Three.js Canvas Container -->
+        <div id="three-container" class="w-full h-full flex-1 cursor-grab active:cursor-grabbing"></div>
+
+        <!-- Bottom Overlay: 3D Legend and Ray Indicators -->
+        <div class="absolute bottom-2 left-2 right-2 z-10 flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono bg-black/70 backdrop-blur p-2 rounded-lg border border-lunar-border">
+          <div class="flex items-center gap-3">
+            <span class="flex items-center gap-1 text-slate-300">
+              <span class="w-2.5 h-0.5 bg-emerald-400 inline-block"></span> Direct Line-of-Sight (LOS)
+            </span>
+            <span class="flex items-center gap-1 text-slate-300">
+              <span class="w-2.5 h-0.5 bg-amber-400 border-b border-dashed inline-block"></span> Regolith Ground Bounce (1st Hop)
+            </span>
+            <span class="flex items-center gap-1 text-slate-300">
+              <span class="w-2.5 h-0.5 bg-red-400 border-b border-dotted inline-block"></span> Crater Rim Scatter (2nd Hop)
+            </span>
+          </div>
+          <div class="text-slate-400">
+            Click-drag to rotate • Scroll to zoom
+          </div>
+        </div>
+
+      </div>
+
+      <!-- REAL-TIME LINK BUDGET & RICIAN FADING KPIS -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        
+        <!-- Metric 1: Rician K-Factor -->
+        <div class="bg-lunar-panel border border-lunar-border rounded-lg p-2.5">
+          <div class="text-[10px] font-mono text-slate-400 uppercase">Rician K-Factor (LOS/Diff)</div>
+          <div class="flex items-baseline gap-1 mt-1">
+            <span id="metric-kfactor" class="text-lg font-bold font-mono text-emerald-400">+11.8</span>
+            <span class="text-xs text-slate-400 font-mono">dB</span>
+          </div>
+          <div class="text-[9px] text-slate-400 mt-1 flex justify-between">
+            <span>&lt;0 dB = Rayleigh Fading</span>
+            <span id="kfactor-state" class="text-emerald-400 font-semibold">STRONG LOS</span>
+          </div>
+        </div>
+
+        <!-- Metric 2: RMS Delay Spread -->
+        <div class="bg-lunar-panel border border-lunar-border rounded-lg p-2.5">
+          <div class="text-[10px] font-mono text-slate-400 uppercase">RMS Delay Spread (τ)</div>
+          <div class="flex items-baseline gap-1 mt-1">
+            <span id="metric-delayspread" class="text-lg font-bold font-mono text-sky-400">184</span>
+            <span class="text-xs text-slate-400 font-mono">ns</span>
+          </div>
+          <div class="text-[9px] text-slate-400 mt-1 flex justify-between">
+            <span>Coherence BW: <strong id="metric-coherence" class="text-slate-300">1.08 MHz</strong></span>
+          </div>
+        </div>
+
+        <!-- Metric 3: Carrier-to-Noise Ratio (CNR) -->
+        <div class="bg-lunar-panel border border-lunar-border rounded-lg p-2.5">
+          <div class="text-[10px] font-mono text-slate-400 uppercase">C / (N₀ + I_multipath)</div>
+          <div class="flex items-baseline gap-1 mt-1">
+            <span id="metric-cnr" class="text-lg font-bold font-mono text-emerald-400">+18.5</span>
+            <span class="text-xs text-slate-400 font-mono">dB</span>
+          </div>
+          <div class="w-full bg-slate-800 h-1.5 rounded-full mt-1 overflow-hidden">
+            <div id="bar-cnr" class="bg-emerald-400 h-full rounded-full transition-all duration-300" style="width: 75%;"></div>
+          </div>
+        </div>
+
+        <!-- Metric 4: Doppler Flutter Rate -->
+        <div class="bg-lunar-panel border border-lunar-border rounded-lg p-2.5">
+          <div class="text-[10px] font-mono text-slate-400 uppercase">Rover Wobble Doppler</div>
+          <div class="flex items-baseline gap-1 mt-1">
+            <span id="metric-doppler" class="text-lg font-bold font-mono text-amber-400">14.2</span>
+            <span class="text-xs text-slate-400 font-mono">Hz</span>
+          </div>
+          <div class="text-[9px] text-slate-400 mt-1 flex justify-between">
+            <span>Terrain Pitch: <strong id="val-rover-pitch" class="text-slate-300">6.4°</strong></span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- CHANNEL IMPULSE RESPONSE (CIR) & IQ MULTIPATH CONSTELLATION GRAPH -->
+      <div class="bg-lunar-panel border border-lunar-border rounded-xl p-3 flex flex-col">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="activity" class="w-4 h-4 text-lunar-accent"></i>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200">Multipath Channel Impulse Response (CIR) & Phase Jitter</h2>
+          </div>
+          <span class="text-[10px] font-mono text-slate-400">Resolution: 50 ns / tap</span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
+          <!-- CIR Taps Graph (8 cols) -->
+          <div class="sm:col-span-8 bg-[#040811] border border-lunar-border rounded-lg p-2 flex flex-col">
+            <div class="flex items-center justify-between text-[10px] font-mono text-slate-400 mb-1">
+              <span>Magnitude |h(τ)| (dB)</span>
+              <span>Delay Taps (0 to 1200 ns)</span>
+            </div>
+            <canvas id="cir-canvas" class="w-full h-28 block rounded bg-black/40"></canvas>
+            <div class="flex justify-between items-center text-[9px] font-mono text-slate-500 mt-1">
+              <span>Tap 0: Direct LOS (0 ns)</span>
+              <span>Tap 1: Regolith Bounce (~250 ns)</span>
+              <span>Tap 2: Crater Wall (~680 ns)</span>
+            </div>
+          </div>
+
+          <!-- IQ Phase Jitter Constellation (4 cols) -->
+          <div class="sm:col-span-4 bg-[#040811] border border-lunar-border rounded-lg p-2 flex flex-col items-center">
+            <div class="text-[10px] font-mono text-slate-400 mb-1 w-full text-left flex justify-between">
+              <span>IQ Demod Plot</span>
+              <span id="iq-mod-label" class="text-sky-400 font-bold">QPSK</span>
+            </div>
+            <canvas id="iq-canvas" class="w-28 h-28 block rounded bg-black/40"></canvas>
+            <div class="text-[9px] font-mono text-slate-400 mt-1 text-center">
+              Phase Error Variance: <span id="val-evm" class="text-emerald-400 font-bold">3.2% EVM</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- RIGHT PANE: Environment Tuners, AI Mitigation Selectors, and Mission Log (5 Cols) -->
+    <section class="lg:col-span-5 flex flex-col space-y-3">
+
+      <!-- LUNAR PHYSICAL ENVIRONMENT & ROVER CONTROLS -->
+      <div class="bg-lunar-panel border border-lunar-border rounded-xl p-3.5">
+        <div class="flex items-center justify-between mb-2.5">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="sliders" class="w-4 h-4 text-lunar-accent"></i>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200">Artemis Link Environment Tuners</h2>
+          </div>
+          <span class="text-[10px] font-mono text-lunar-gold">Shackleton Crater Rim</span>
+        </div>
+
+        <div class="space-y-3 text-xs">
+          <!-- Rover Traversal Position (Rim vs Crater Interior) -->
+          <div>
+            <div class="flex justify-between text-slate-300 mb-1">
+              <label class="font-medium flex items-center gap-1">
+                Rover Traversal Track
+                <span class="text-[10px] text-slate-500">(Position on crater rim)</span>
+              </label>
+              <span id="track-pos-label" class="font-mono text-sky-400 font-bold">Crater Rim Peak (LOS clear)</span>
+            </div>
+            <input id="slider-rover-pos" type="range" min="0" max="100" value="20" class="w-full h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-sky-400" />
+            <div class="flex justify-between text-[10px] text-slate-500 font-mono mt-0.5">
+              <span>0% (Peak Rim)</span>
+              <span>50% (Crater Slope)</span>
+              <span>100% (Deep Shadow Floor)</span>
+            </div>
+          </div>
+
+          <!-- Rover Pitch / Roll Attitude Wobble -->
+          <div>
+            <div class="flex justify-between text-slate-300 mb-1">
+              <label class="font-medium flex items-center gap-1">
+                LTV Rover Attitude Dynamic Wobble
+                <span class="text-[10px] text-slate-500">(rough terrain motion)</span>
+              </label>
+              <span id="val-wobble-disp" class="font-mono text-amber-400 font-bold">Moderate (±12°)</span>
+            </div>
+            <input id="slider-wobble" type="range" min="0" max="30" value="12" class="w-full h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-amber-400" />
+          </div>
+
+          <!-- Carrier Frequency Band Switcher -->
+          <div class="grid grid-cols-3 gap-1.5 pt-1">
+            <button onclick="setRFBand('UHF')" id="btn-band-uhf" class="p-1.5 rounded border border-lunar-border bg-black/40 hover:border-slate-500 text-center transition">
+              <div class="text-[11px] font-bold text-slate-200">UHF</div>
+              <div class="text-[9px] text-slate-400">400 MHz (EVA)</div>
+            </button>
+            <button onclick="setRFBand('S')" id="btn-band-s" class="p-1.5 rounded border border-lunar-accent bg-sky-950/60 text-center transition glow-cyan">
+              <div class="text-[11px] font-bold text-sky-300">S-Band</div>
+              <div class="text-[9px] text-slate-400">2.48 GHz (Mesh)</div>
+            </button>
+            <button onclick="setRFBand('Ka')" id="btn-band-ka" class="p-1.5 rounded border border-lunar-border bg-black/40 hover:border-slate-500 text-center transition">
+              <div class="text-[11px] font-bold text-slate-200">Ka-Band</div>
+              <div class="text-[9px] text-slate-400">26.5 GHz (Gateway)</div>
+            </button>
+          </div>
+
+          <!-- Lunar Regolith Dielectric Properties -->
+          <div class="flex items-center justify-between pt-1 border-t border-lunar-border/60 text-[11px]">
+            <span class="text-slate-400">Regolith Permittivity:</span>
+            <div class="flex items-center space-x-2 font-mono">
+              <span class="text-slate-300">ε_r = <strong>2.8</strong></span>
+              <span class="text-slate-500">|</span>
+              <span class="text-slate-300">tan δ = <strong>0.006</strong></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI MULTIPATH MITIGATION STRATEGIES (NASA SBIR PROCURED ENGINES) -->
+      <div class="bg-lunar-panel border border-lunar-border rounded-xl p-3.5 flex-1 flex flex-col">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="cpu" class="w-4 h-4 text-lunar-accent"></i>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200">Cognitive AI Link Mitigation Engines</h2>
+          </div>
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">Active</span>
+        </div>
+
+        <p class="text-[11px] text-slate-400 mb-2.5">
+          Select autonomous algorithmic mitigations to overcome destructive regolith phase cancellation and crater rim shadowing:
+        </p>
+
+        <!-- Algorithm Selection Cards -->
+        <div class="space-y-2 text-xs font-mono">
+          
+          <!-- Mode 1: Static SISO (Baseline) -->
+          <button onclick="setMitigationAlgorithm('siso')" id="alg-siso" class="w-full p-2.5 rounded-lg border border-lunar-border bg-black/40 hover:border-slate-400 text-left transition flex flex-col">
+            <div class="flex items-center justify-between w-full">
+              <span class="font-bold text-slate-200 flex items-center gap-1.5">
+                1. Baseline SISO (Unmanaged)
+              </span>
+              <span class="text-[9px] bg-red-950 text-red-400 border border-red-800 px-1.5 py-0.2 rounded font-semibold">High Loss</span>
+            </div>
+            <p class="text-[10px] text-slate-400 mt-1 font-sans leading-tight">
+              Single antenna with no attitude compensation. Vulnerable to deep destructive multipath nulls and crater occlusion dropouts.
+            </p>
+          </button>
+
+          <!-- Mode 2: Neural Phased Array Beamforming -->
+          <button onclick="setMitigationAlgorithm('beamform')" id="alg-beamform" class="w-full p-2.5 rounded-lg border border-lunar-accent bg-sky-950/40 text-left transition flex flex-col glow-cyan">
+            <div class="flex items-center justify-between w-full">
+              <span class="font-bold text-sky-200 flex items-center gap-1.5">
+                2. Neural AESA Beamforming
+              </span>
+              <span class="text-[9px] bg-sky-950 text-sky-300 border border-sky-800 px-1.5 py-0.2 rounded font-semibold">Real-Time</span>
+            </div>
+            <p class="text-[10px] text-slate-300 mt-1 font-sans leading-tight">
+              Sub-millisecond antenna weight adaptation countering rover pitch/roll wobble and steering boresight gain directly at Gateway.
+            </p>
+          </button>
+
+          <!-- Mode 3: Constructive Rake AI-MIMO -->
+          <button onclick="setMitigationAlgorithm('rake')" id="alg-rake" class="w-full p-2.5 rounded-lg border border-lunar-border bg-black/40 hover:border-slate-400 text-left transition flex flex-col">
+            <div class="flex items-center justify-between w-full">
+              <span class="font-bold text-slate-200 flex items-center gap-1.5">
+                3. Constructive Rake / AI-MIMO
+              </span>
+              <span class="text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-1.5 py-0.2 rounded font-semibold">Multipath Harvest</span>
+            </div>
+            <p class="text-[10px] text-slate-400 mt-1 font-sans leading-tight">
+              Coherently phase-aligns regolith ground reflections with the direct LOS path (Maximum Ratio Combining), transforming multipath into signal gain!
+            </p>
+          </button>
+
+          <!-- Mode 4: Predictive DTN Crater Handover -->
+          <button onclick="setMitigationAlgorithm('dtn')" id="alg-dtn" class="w-full p-2.5 rounded-lg border border-lunar-border bg-black/40 hover:border-slate-400 text-left transition flex flex-col">
+            <div class="flex items-center justify-between w-full">
+              <span class="font-bold text-slate-200 flex items-center gap-1.5">
+                4. Predictive DTN Crater Handover
+              </span>
+              <span class="text-[9px] bg-purple-950 text-purple-300 border border-purple-800 px-1.5 py-0.2 rounded font-semibold">Delay-Tolerant</span>
+            </div>
+            <p class="text-[10px] text-slate-400 mt-1 font-sans leading-tight">
+              Anticipates line-of-sight blockage when rover dips into deep crater shadows. Pre-buffers telemetry bundles or switches to high-elevation orbiter.
+            </p>
+          </button>
+
+        </div>
+
+        <!-- Traverse Simulation Triggers -->
+        <div class="flex items-center justify-between pt-3 border-t border-lunar-border/60 mt-3">
+          <button onclick="toggleRoverDrive()" id="btn-drive-toggle" class="px-3 py-1.5 bg-gradient-to-r from-sky-600 to-cyan-500 hover:from-sky-500 hover:to-cyan-400 text-white rounded text-xs font-bold flex items-center space-x-1.5 shadow transition">
+            <i data-lucide="play" class="w-3.5 h-3.5" id="drive-icon"></i>
+            <span id="drive-label">Auto-Traverse Rover</span>
+          </button>
+          <button onclick="injectCraterDrop()" class="px-2.5 py-1.5 bg-red-950/60 hover:bg-red-900/60 text-red-300 border border-red-800/80 rounded text-xs font-mono transition">
+            + Plunge into Shadow
+          </button>
+        </div>
+      </div>
+
+      <!-- TELEMETRY EVENT LOG -->
+      <div class="bg-lunar-panel border border-lunar-border rounded-xl p-3 shadow-lg">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+            <i data-lucide="terminal" class="w-4 h-4 text-lunar-accent"></i>
+            Artemis RF Telemetry & Link Convergence Log
+          </span>
+          <button onclick="clearEventLog()" class="text-[10px] text-slate-400 hover:text-slate-200 underline font-mono">Clear</button>
+        </div>
+        <div id="event-log-box" class="h-28 overflow-y-auto space-y-1 font-mono text-[11px] bg-[#040811] p-2 rounded border border-lunar-border/60">
+          <!-- Dynamic Log entries -->
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- BOTTOM STATUS BANNER -->
+  <footer class="bg-black/90 border-t border-lunar-border px-4 py-2 flex flex-col sm:flex-row items-center justify-between text-xs font-mono gap-2">
+    <div class="flex items-center space-x-2 w-full sm:w-auto">
+      <span class="text-lunar-accent font-bold flex items-center gap-1">
+        <i data-lucide="radio" class="w-3.5 h-3.5 text-sky-400"></i> CHANNEL STATUS:
+      </span>
+      <span id="footer-status-text" class="text-slate-300 truncate max-w-[850px]">
+        [RICIAN ACTIVE] Direct path K-factor +11.8 dB. Phase jitter controlled via Neural Phased Array weight adaptation.
+      </span>
+    </div>
+    <div class="flex items-center space-x-3 text-[11px] text-slate-400 shrink-0">
+      <span>Moon Model: <strong>LOLA South Pole DEM</strong></span>
+      <span>•</span>
+      <span class="text-emerald-400 font-semibold">CCSDS 231.0-B Sync</span>
+    </div>
+  </footer>
+
+  <script>
+    // Initialize Lucide icons
+    lucide.createIcons();
+
+    // --------------------------------------------------------------------------
+    // GLOBAL SIMULATION STATE
+    // --------------------------------------------------------------------------
+    const State = {
+      rfBand: 'S', // 'UHF', 'S', 'Ka'
+      roverPosPercent: 20, // 0 = Rim Peak, 50 = Mid Slope, 100 = Shadow Floor
+      roverWobbleDeg: 12,
+      mitigation: 'beamform', // 'siso', 'beamform', 'rake', 'dtn'
+      isDriving: false,
+      driveDirection: 1,
+      driveSpeed: 0.25,
+
+      // Dynamic RF Link Metrics
+      elevationDeg: 24.2,
+      losBlocked: false,
+      kFactorDb: 11.8,
+      delaySpreadNs: 184,
+      cnrDb: 18.5,
+      dopplerHz: 14.2,
+      evmPercent: 3.2,
+      bitRateMbps: 4.8,
+
+      // Audio status
+      audioEnabled: false
+    };
+
+    // --------------------------------------------------------------------------
+    // TONE.JS AUDIO ENGINE: RF FADING, DOPPLER FLUTTER & BEACON CHIRPS
+    // --------------------------------------------------------------------------
+    let audioSynth = null;
+    let flutterOsc = null;
+    let audioGain = null;
+
+    function initAudio() {
+      if (audioSynth) return;
+      try {
+        audioGain = new Tone.Gain(0.12).toDestination();
+
+        // Carrier Tone Oscillator
+        flutterOsc = new Tone.Oscillator(520, "sine");
+        flutterOsc.connect(audioGain);
+
+        // Burst synth for packets
+        audioSynth = new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'triangle' },
+          envelope: { attack: 0.01, decay: 0.08, sustain: 0.05, release: 0.1 }
+        }).connect(audioGain);
+
+        flutterOsc.start();
+        updateAudioTone();
+      } catch (err) {
+        console.warn("Tone.js audio blocked by user gesture:", err);
+      }
+    }
+
+    function toggleAudio() {
+      if (!State.audioEnabled) {
+        Tone.start();
+        initAudio();
+        State.audioEnabled = true;
+        document.getElementById('audio-label').textContent = 'RF Audio: ON';
+        document.getElementById('btn-audio').classList.add('bg-sky-950/80', 'text-sky-300', 'border', 'border-sky-500');
+        playChirp([660, 880, 1100]);
+      } else {
+        State.audioEnabled = false;
+        if (flutterOsc) {
+          flutterOsc.stop();
+          flutterOsc = null;
+          audioSynth = null;
+        }
+        document.getElementById('audio-label').textContent = 'RF Audio: OFF';
+        document.getElementById('btn-audio').classList.remove('bg-sky-950/80', 'text-sky-300', 'border', 'border-sky-500');
+      }
+    }
+
+    function playChirp(freqs = [440, 660]) {
+      if (!State.audioEnabled || !audioSynth) return;
+      try {
+        const now = Tone.now();
+        freqs.forEach((f, idx) => {
+          audioSynth.triggerAttackRelease(f, '16n', now + idx * 0.05);
+        });
+      } catch(e) {}
+    }
+
+    function updateAudioTone() {
+      if (!State.audioEnabled || !flutterOsc) return;
+      try {
+        // Base carrier pitch based on band
+        const basePitch = State.rfBand === 'UHF' ? 320 : (State.rfBand === 'S' ? 540 : 880);
+        const flutter = Math.sin(Date.now() * 0.01) * (State.dopplerHz * 1.5);
+        
+        if (State.losBlocked && State.mitigation === 'siso') {
+          flutterOsc.frequency.rampTo(120, 0.1);
+          audioGain.gain.rampTo(0.02, 0.1); // muffled deep fade
+        } else {
+          flutterOsc.frequency.rampTo(basePitch + flutter, 0.08);
+          audioGain.gain.rampTo(0.12, 0.08);
+        }
+      } catch(e) {}
+    }
+
+    // --------------------------------------------------------------------------
+    // THREE.JS 3D LUNAR ENVIRONMENT & RAY-TRACING ENGINE
+    // --------------------------------------------------------------------------
+    let scene, camera, renderer;
+    let moonTerrainMesh, roverGroup, gatewayMesh, landerMesh;
+    let rayLos, rayBounce1, rayBounce2;
+    let cameraMode = 'overview';
+    const container3D = document.getElementById('three-container');
+
+    function init3D() {
+      const w = container3D.clientWidth;
+      const h = container3D.clientHeight;
+
+      scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x06090e, 0.012);
+
+      camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
+      camera.position.set(0, 38, 70);
+      camera.lookAt(0, 5, 0);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(w, h);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      container3D.appendChild(renderer.domElement);
+
+      // Deep Space Starfield
+      createDeepSpaceStars();
+
+      // Sun Lighting (Low elevation polar sun angle typical of Lunar South Pole)
+      const sunLight = new THREE.DirectionalLight(0xfff6dd, 2.5);
+      sunLight.position.set(90, 22, -60);
+      scene.add(sunLight);
+
+      // Subtle Earthshine ambient light
+      const ambientLight = new THREE.AmbientLight(0x162238, 0.8);
+      scene.add(ambientLight);
+
+      // Procedural Lunar South Pole Crater Surface (Shackleton Rim Profile)
+      buildProceduralCraterTerrain();
+
+      // Surface Assets: Lunar Rover (LTV)
+      buildRoverModel();
+
+      // Surface Base: Artemis Human Landing System (HLS)
+      buildHLSModel();
+
+      // Orbital Relay: Lunar Gateway Orbiter
+      buildGatewayModel();
+
+      // Multipath Ray-Tracing lines
+      buildRayTracingLines();
+
+      // Interactive mouse orbit
+      setupOrbitInteraction();
+
+      window.addEventListener('resize', onWindowResize);
+    }
+
+    function createDeepSpaceStars() {
+      const geo = new THREE.BufferGeometry();
+      const count = 1200;
+      const pos = new Float32Array(count * 3);
+      for (let i = 0; i < count * 3; i++) {
+        pos[i] = (Math.random() - 0.5) * 500;
+      }
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const mat = new THREE.PointsMaterial({ color: 0x94a3b8, size: 0.7 });
+      const stars = new THREE.Points(geo, mat);
+      scene.add(stars);
+    }
+
+    function buildProceduralCraterTerrain() {
+      const size = 110;
+      const segments = 90;
+      const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
+      geometry.rotateX(-Math.PI / 2);
+
+      const pos = geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const z = pos.getZ(i);
+
+        // Crater formula: deep depression centered at (0, 0) with elevated rim
+        const distFromCenter = Math.sqrt(x * x + z * z);
+        let height = 0;
+
+        // Crater Rim & Floor math
+        const craterRadius = 24;
+        if (distFromCenter < craterRadius) {
+          // Inside crater bowl (down to -16 units depth)
+          const norm = distFromCenter / craterRadius;
+          height = -16 * (1 - norm * norm) + Math.sin(norm * Math.PI) * 2.5;
+        } else if (distFromCenter < craterRadius + 14) {
+          // Raised Crater Rim lip
+          const rimNorm = (distFromCenter - craterRadius) / 14;
+          height = Math.sin(rimNorm * Math.PI) * 7.5;
+        } else {
+          // Surrounding highland regolith roughness
+          height = Math.sin(x * 0.12) * Math.cos(z * 0.12) * 1.8;
+        }
+
+        // Small random rock roughness
+        height += (Math.sin(x * 0.6) + Math.cos(z * 0.6)) * 0.35;
+        pos.setY(i, height);
+      }
+      geometry.computeVertexNormals();
+
+      // Lunar Regolith Material (dark, high specularity from ilmenite/basalt)
+      const regolithMat = new THREE.MeshStandardMaterial({
+        color: 0x222a36,
+        roughness: 0.9,
+        metalness: 0.2,
+        flatShading: true
+      });
+
+      moonTerrainMesh = new THREE.Mesh(geometry, regolithMat);
+      scene.add(moonTerrainMesh);
+
+      // Add wireframe contour guide for crater rim
+      const wireMat = new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.06
+      });
+      const contourMesh = new THREE.Mesh(geometry, wireMat);
+      contourMesh.position.y += 0.05;
+      scene.add(contourMesh);
+    }
+
+    function buildRoverModel() {
+      roverGroup = new THREE.Group();
+
+      // Rover Chassis
+      const bodyGeo = new THREE.BoxGeometry(2.4, 0.9, 3.4);
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.6, roughness: 0.4 });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      body.position.y = 1.0;
+      roverGroup.add(body);
+
+      // Wheels (4 lunar wire-mesh wheels)
+      const wheelGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.45, 12);
+      const wheelMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8 });
+      const wOffsets = [
+        [-1.3, 0.55, 1.2],
+        [1.3, 0.55, 1.2],
+        [-1.3, 0.55, -1.2],
+        [1.3, 0.55, -1.2]
+      ];
+      wOffsets.forEach(pos => {
+        const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+        wheel.rotation.z = Math.PI / 2;
+        wheel.position.set(...pos);
+        roverGroup.add(wheel);
+      });
+
+      // High-Gain Phased Array Antenna Mast
+      const mastGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.8, 8);
+      const mastMat = new THREE.MeshStandardMaterial({ color: 0x0284c7 });
+      const mast = new THREE.Mesh(mastGeo, mastMat);
+      mast.position.set(0, 2.2, 0.5);
+      roverGroup.add(mast);
+
+      // Steerable Antenna Dish
+      const dishGeo = new THREE.CylinderGeometry(0.65, 0.1, 0.2, 16);
+      const dishMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0369a1 });
+      const dish = new THREE.Mesh(dishGeo, dishMat);
+      dish.position.set(0, 3.1, 0.5);
+      dish.rotation.x = 0.5;
+      roverGroup.add(dish);
+
+      scene.add(roverGroup);
+    }
+
+    function buildHLSModel() {
+      landerMesh = new THREE.Group();
+
+      // Starship HLS style cylindrical hull
+      const hullGeo = new THREE.CylinderGeometry(2.0, 2.2, 8.5, 16);
+      const hullMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.85, roughness: 0.2 });
+      const hull = new THREE.Mesh(hullGeo, hullMat);
+      hull.position.y = 4.25;
+      landerMesh.add(hull);
+
+      // Base Landing Legs
+      const legGeo = new THREE.BoxGeometry(0.4, 4.0, 0.4);
+      const legMat = new THREE.MeshStandardMaterial({ color: 0x475569 });
+      for (let i = 0; i < 4; i++) {
+        const leg = new THREE.Mesh(legGeo, legMat);
+        const ang = (i * Math.PI) / 2;
+        leg.position.set(Math.cos(ang) * 2.8, 1.8, Math.sin(ang) * 2.8);
+        leg.rotation.z = Math.cos(ang) * -0.3;
+        leg.rotation.x = Math.sin(ang) * 0.3;
+        landerMesh.add(leg);
+      }
+
+      // S-Band Base Station Repeater Antenna on top
+      const beaconGeo = new THREE.SphereGeometry(0.35, 12, 12);
+      const beaconMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
+      const beacon = new THREE.Mesh(beaconGeo, beaconMat);
+      beacon.position.set(0, 8.8, 0);
+      landerMesh.add(beacon);
+
+      // Position on opposite crater ridge
+      landerMesh.position.set(22, 5.8, -12);
+      scene.add(landerMesh);
+    }
+
+    function buildGatewayModel() {
+      gatewayMesh = new THREE.Group();
+
+      // Habitat / Power and Propulsion Element (PPE)
+      const coreGeo = new THREE.CylinderGeometry(0.9, 0.9, 3.2, 12);
+      const coreMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, metalness: 0.9 });
+      const core = new THREE.Mesh(coreGeo, coreMat);
+      core.rotation.z = Math.PI / 2;
+      gatewayMesh.add(core);
+
+      // Solar Arrays (Gold tinted solar panels)
+      const panelGeo = new THREE.BoxGeometry(7.0, 0.08, 1.4);
+      const panelMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.7, roughness: 0.3 });
+      const panel = new THREE.Mesh(panelGeo, panelMat);
+      gatewayMesh.add(panel);
+
+      // High-rate Ka-band Feed Horn
+      const feedGeo = new THREE.ConeGeometry(0.5, 0.8, 12);
+      const feedMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+      const feed = new THREE.Mesh(feedGeo, feedMat);
+      feed.rotation.x = Math.PI;
+      feed.position.y = -1.2;
+      gatewayMesh.add(feed);
+
+      // Orbit position (high altitude elevation)
+      gatewayMesh.position.set(-15, 36, 12);
+      scene.add(gatewayMesh);
+    }
+
+    function buildRayTracingLines() {
+      // 1. Line-of-Sight Ray (Rover to Gateway)
+      const losMat = new THREE.LineBasicMaterial({ color: 0x10b981, linewidth: 3 });
+      const losGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+      rayLos = new THREE.Line(losGeo, losMat);
+      scene.add(rayLos);
+
+      // 2. Regolith Ground Bounce 1 (Rover -> Ground -> Gateway)
+      const b1Mat = new THREE.LineDashedMaterial({ color: 0xfbbf24, dashSize: 1.2, gapSize: 0.6, linewidth: 2 });
+      const b1Geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+      rayBounce1 = new THREE.Line(b1Geo, b1Mat);
+      scene.add(rayBounce1);
+
+      // 3. Crater Wall Rim Bounce 2 (Rover -> Crater Ridge -> Gateway)
+      const b2Mat = new THREE.LineDashedMaterial({ color: 0xf87171, dashSize: 0.8, gapSize: 0.8, linewidth: 1.5 });
+      const b2Geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+      rayBounce2 = new THREE.Line(b2Geo, b2Mat);
+      scene.add(rayBounce2);
+    }
+
+    function updateRoverPositionAndRays() {
+      // Interpolate rover along a track from Crater Rim (elevated) into Crater Bowl (shadowed)
+      const t = State.roverPosPercent / 100; // 0 to 1
+
+      // Path parametric curve:
+      // t = 0: x = -26, z = 8 (Rim peak, Y ~ 7.5)
+      // t = 0.5: x = -16, z = 4 (Mid-slope, Y ~ 0.5)
+      // t = 1.0: x = -4, z = 0 (Deep bowl, Y ~ -14.5)
+      const roverX = -26 + t * 22;
+      const roverZ = 8 - t * 8;
+
+      // Compute terrain height at rover position
+      const dist = Math.sqrt(roverX * roverX + roverZ * roverZ);
+      let roverY = 0;
+      if (dist < 24) {
+        const norm = dist / 24;
+        roverY = -16 * (1 - norm * norm) + Math.sin(norm * Math.PI) * 2.5;
+      } else if (dist < 38) {
+        const rimNorm = (dist - 24) / 14;
+        roverY = Math.sin(rimNorm * Math.PI) * 7.5;
+      } else {
+        roverY = 1.5;
+      }
+
+      // Add dynamic attitude wobble (pitch and roll based on motion & slider)
+      const wobble = (State.roverWobbleDeg * (Math.PI / 180));
+      const dynamicPitch = Math.sin(Date.now() * 0.004) * wobble;
+      const dynamicRoll = Math.cos(Date.now() * 0.003) * (wobble * 0.7);
+
+      roverGroup.position.set(roverX, roverY, roverZ);
+      roverGroup.rotation.x = dynamicPitch + (t > 0.3 ? 0.3 : 0); // Slope tilt
+      roverGroup.rotation.z = dynamicRoll;
+
+      // Gateway slow orbital movement
+      const orbTime = Date.now() * 0.0004;
+      gatewayMesh.position.x = Math.sin(orbTime) * 32 - 10;
+      gatewayMesh.position.z = Math.cos(orbTime) * 28;
+      gatewayMesh.position.y = 36 + Math.sin(orbTime * 2) * 4;
+
+      // Ray Tracing Endpoints
+      const roverAntennaPos = new THREE.Vector3(roverX, roverY + 3.1, roverZ);
+      const gatewayAntennaPos = gatewayMesh.position.clone().add(new THREE.Vector3(0, -1.2, 0));
+
+      // Calculate Line-of-Sight Blockage via Crater Rim Occlusion
+      // The rim peak sits between rover and gateway when rover is deep in the bowl
+      const rimLipHeight = 7.2;
+      const isShadowed = (roverY < -2.0 && gatewayAntennaPos.x > roverX);
+      State.losBlocked = isShadowed;
+
+      // 1. Direct LOS Ray update
+      const posLos = rayLos.geometry.attributes.position.array;
+      posLos[0] = roverAntennaPos.x; posLos[1] = roverAntennaPos.y; posLos[2] = roverAntennaPos.z;
+      posLos[3] = gatewayAntennaPos.x; posLos[4] = gatewayAntennaPos.y; posLos[5] = gatewayAntennaPos.z;
+      rayLos.geometry.attributes.position.needsUpdate = true;
+
+      // If shadowed, turn LOS red/dashed or hide
+      if (State.losBlocked) {
+        rayLos.material.color.setHex(0xef4444);
+        rayLos.material.transparent = true;
+        rayLos.material.opacity = 0.35;
+        document.getElementById('val-los-status').textContent = 'BLOCKED (CRATER SHADOW)';
+        document.getElementById('val-los-status').className = 'text-red-400 font-bold';
+      } else {
+        rayLos.material.color.setHex(0x10b981);
+        rayLos.material.transparent = false;
+        rayLos.material.opacity = 1.0;
+        document.getElementById('val-los-status').textContent = 'UNOBSTRUCTED';
+        document.getElementById('val-los-status').className = 'text-emerald-400 font-bold';
+      }
+
+      // 2. Ground Bounce Ray 1 (Specular regolith reflection point)
+      // Reflection point sits midway on the slope
+      const groundBouncePt = new THREE.Vector3(
+        (roverX + gatewayAntennaPos.x) * 0.45,
+        Math.max(-8, roverY * 0.3),
+        (roverZ + gatewayAntennaPos.z) * 0.45
+      );
+      const posB1 = rayBounce1.geometry.attributes.position.array;
+      posB1[0] = roverAntennaPos.x; posB1[1] = roverAntennaPos.y; posB1[2] = roverAntennaPos.z;
+      posB1[3] = groundBouncePt.x;   posB1[4] = groundBouncePt.y;   posB1[5] = groundBouncePt.z;
+      posB1[6] = gatewayAntennaPos.x; posB1[7] = gatewayAntennaPos.y; posB1[8] = gatewayAntennaPos.z;
+      rayBounce1.geometry.attributes.position.needsUpdate = true;
+      rayBounce1.computeLineDistances();
+
+      // 3. Crater Wall Rim Bounce 2 (Diffused scatter off steep crater wall)
+      const wallBouncePt = new THREE.Vector3(
+        -12,
+        rimLipHeight * 0.85,
+        -14
+      );
+      const posB2 = rayBounce2.geometry.attributes.position.array;
+      posB2[0] = roverAntennaPos.x; posB2[1] = roverAntennaPos.y; posB2[2] = roverAntennaPos.z;
+      posB2[3] = wallBouncePt.x;    posB2[4] = wallBouncePt.y;    posB2[5] = wallBouncePt.z;
+      posB2[6] = gatewayAntennaPos.x; posB2[7] = gatewayAntennaPos.y; posB2[8] = gatewayAntennaPos.z;
+      rayBounce2.geometry.attributes.position.needsUpdate = true;
+      rayBounce2.computeLineDistances();
+
+      // Calculate Elevation Angle (degrees)
+      const deltaVec = new THREE.Vector3().subVectors(gatewayAntennaPos, roverAntennaPos);
+      const groundDist = Math.sqrt(deltaVec.x * deltaVec.x + deltaVec.z * deltaVec.z);
+      const elevRad = Math.atan2(deltaVec.y, groundDist);
+      State.elevationDeg = Math.max(0, Math.round(elevRad * (180 / Math.PI) * 10) / 10);
+      document.getElementById('val-elevation').textContent = `${State.elevationDeg.toFixed(1)}°`;
+      document.getElementById('val-rover-pitch').textContent = `${(Math.abs(dynamicPitch) * (180 / Math.PI)).toFixed(1)}°`;
+    }
+
+    let isMouseDown = false;
+    let prevMouse = { x: 0, y: 0 };
+    let camSpherical = { theta: 0.15, phi: 1.05, radius: 82 };
+
+    function setupOrbitInteraction() {
+      const dom = renderer.domElement;
+
+      dom.addEventListener('mousedown', e => {
+        isMouseDown = true;
+        prevMouse = { x: e.clientX, y: e.clientY };
+      });
+      window.addEventListener('mouseup', () => { isMouseDown = false; });
+      window.addEventListener('mousemove', e => {
+        if (!isMouseDown) return;
+        const dx = e.clientX - prevMouse.x;
+        const dy = e.clientY - prevMouse.y;
+        prevMouse = { x: e.clientX, y: e.clientY };
+
+        camSpherical.theta -= dx * 0.007;
+        camSpherical.phi = Math.max(0.15, Math.min(Math.PI / 2 - 0.05, camSpherical.phi - dy * 0.007));
+        updateCameraViewPosition();
+      });
+
+      // Touch events for mobile/tablet
+      dom.addEventListener('touchstart', e => {
+        if (e.touches.length === 1) {
+          isMouseDown = true;
+          prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+      }, { passive: true });
+      window.addEventListener('touchend', () => { isMouseDown = false; });
+      window.addEventListener('touchmove', e => {
+        if (!isMouseDown || e.touches.length !== 1) return;
+        const dx = e.touches[0].clientX - prevMouse.x;
+        const dy = e.touches[0].clientY - prevMouse.y;
+        prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+
+        camSpherical.theta -= dx * 0.007;
+        camSpherical.phi = Math.max(0.15, Math.min(Math.PI / 2 - 0.05, camSpherical.phi - dy * 0.007));
+        updateCameraViewPosition();
+      }, { passive: true });
+
+      // Wheel Zoom
+      dom.addEventListener('wheel', e => {
+        e.preventDefault();
+        camSpherical.radius = Math.max(25, Math.min(140, camSpherical.radius + e.deltaY * 0.05));
+        updateCameraViewPosition();
+      }, { passive: false });
+
+      updateCameraViewPosition();
+    }
+
+    function updateCameraViewPosition() {
+      if (cameraMode === 'overview') {
+        camera.position.x = camSpherical.radius * Math.sin(camSpherical.phi) * Math.sin(camSpherical.theta);
+        camera.position.y = camSpherical.radius * Math.cos(camSpherical.phi);
+        camera.position.z = camSpherical.radius * Math.sin(camSpherical.phi) * Math.cos(camSpherical.theta);
+        camera.lookAt(0, 0, 0);
+      } else if (cameraMode === 'rover') {
+        const rp = roverGroup.position;
+        camera.position.set(rp.x - 7, rp.y + 4.5, rp.z + 8);
+        camera.lookAt(rp.x, rp.y + 2, rp.z);
+      } else if (cameraMode === 'gateway') {
+        const gp = gatewayMesh.position;
+        camera.position.set(gp.x + 8, gp.y + 6, gp.z + 10);
+        camera.lookAt(roverGroup.position.x, roverGroup.position.y, roverGroup.position.z);
+      }
+    }
+
+    function setCameraView(mode) {
+      cameraMode = mode;
+      ['overview', 'rover', 'gateway'].forEach(m => {
+        const btn = document.getElementById(`cam-btn-${m}`);
+        if (m === mode) {
+          btn.className = 'px-2 py-0.5 bg-sky-500/20 text-sky-300 rounded font-mono hover:bg-sky-500/30 transition text-[11px]';
+        } else {
+          btn.className = 'px-2 py-0.5 text-slate-400 rounded font-mono hover:bg-lunar-border transition text-[11px]';
+        }
+      });
+      updateCameraViewPosition();
+    }
+
+    function onWindowResize() {
+      const w = container3D.clientWidth;
+      const h = container3D.clientHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+      resizeCanvases();
+    }
+
+    // --------------------------------------------------------------------------
+    // CIR GRAPH & CONSTELLATION IQ CANVAS ENGINES
+    // --------------------------------------------------------------------------
+    const cirCanvas = document.getElementById('cir-canvas');
+    const cirCtx = cirCanvas.getContext('2d');
+    const iqCanvas = document.getElementById('iq-canvas');
+    const iqCtx = iqCanvas.getContext('2d');
+
+    function resizeCanvases() {
+      cirCanvas.width = cirCanvas.parentElement.clientWidth;
+      cirCanvas.height = cirCanvas.parentElement.clientHeight - 24;
+      iqCanvas.width = 112;
+      iqCanvas.height = 112;
+    }
+
+    function renderCIR() {
+      const w = cirCanvas.width;
+      const h = cirCanvas.height;
+      if (!w || !h) return;
+
+      cirCtx.fillStyle = '#040811';
+      cirCtx.fillRect(0, 0, w, h);
+
+      // Grid Lines
+      cirCtx.strokeStyle = 'rgba(31, 46, 69, 0.5)';
+      cirCtx.lineWidth = 1;
+      cirCtx.beginPath();
+      for (let x = 0; x <= w; x += w / 8) {
+        cirCtx.moveTo(x, 0); cirCtx.lineTo(x, h);
+      }
+      for (let y = 0; y <= h; y += h / 4) {
+        cirCtx.moveTo(0, y); cirCtx.lineTo(w, y);
+      }
+      cirCtx.stroke();
+
+      // Tap 0 (LOS direct path at delay = 0 ns)
+      const x0 = 24;
+      let amp0 = State.losBlocked ? 0.08 : 0.88;
+      if (State.mitigation === 'beamform') amp0 *= 1.25;
+
+      drawCIRTaps(x0, amp0, State.losBlocked ? '#ef4444' : '#10b981', 'LOS');
+
+      // Tap 1 (Regolith ground bounce at delay ~260 ns)
+      const x1 = w * 0.32;
+      let amp1 = 0.42 * (1 - (State.elevationDeg / 90)); // lower elevation = higher bounce
+      if (State.mitigation === 'rake') {
+        // Constructive Rake aligns tap 1 in phase!
+        drawCIRTaps(x1, amp1, '#10b981', 'Tap 1 (Coherent)');
+      } else {
+        drawCIRTaps(x1, amp1, '#fbbf24', 'Tap 1');
+      }
+
+      // Tap 2 (Crater wall reflection at delay ~680 ns)
+      const x2 = w * 0.68;
+      const amp2 = 0.28;
+      drawCIRTaps(x2, amp2, '#f87171', 'Tap 2');
+
+      // Noise floor level
+      cirCtx.strokeStyle = 'rgba(148, 163, 184, 0.3)';
+      cirCtx.setLineDash([4, 4]);
+      cirCtx.beginPath();
+      cirCtx.moveTo(0, h - 8);
+      cirCtx.lineTo(w, h - 8);
+      cirCtx.stroke();
+      cirCtx.setLineDash([]);
+    }
+
+    function drawCIRTaps(x, amplitude, color, label) {
+      const h = cirCanvas.height;
+      const tapHeight = Math.min(h - 10, amplitude * (h - 14));
+
+      cirCtx.strokeStyle = color;
+      cirCtx.lineWidth = 3;
+      cirCtx.beginPath();
+      cirCtx.moveTo(x, h);
+      cirCtx.lineTo(x, h - tapHeight);
+      cirCtx.stroke();
+
+      // Arrow head / cap
+      cirCtx.fillStyle = color;
+      cirCtx.beginPath();
+      cirCtx.arc(x, h - tapHeight, 3.5, 0, Math.PI * 2);
+      cirCtx.fill();
+    }
+
+    function renderIQConstellation() {
+      const w = iqCanvas.width;
+      const h = iqCanvas.height;
+      if (!w || !h) return;
+
+      iqCtx.fillStyle = '#040811';
+      iqCtx.fillRect(0, 0, w, h);
+
+      // Axes
+      iqCtx.strokeStyle = 'rgba(31, 46, 69, 0.8)';
+      iqCtx.lineWidth = 1;
+      iqCtx.beginPath();
+      iqCtx.moveTo(w / 2, 0); iqCtx.lineTo(w / 2, h);
+      iqCtx.moveTo(0, h / 2); iqCtx.lineTo(w, h / 2);
+      iqCtx.stroke();
+
+      // QPSK ideal constellation point centers (4 clusters)
+      const cx = w / 2;
+      const cy = h / 2;
+      const scale = w * 0.28;
+      const centers = [
+        [cx - scale, cy - scale],
+        [cx + scale, cy - scale],
+        [cx - scale, cy + scale],
+        [cx + scale, cy + scale]
+      ];
+
+      // Jitter spread depends on Rician K-factor & AI mitigation
+      let jitterSigma = 3.5;
+      if (State.losBlocked && State.mitigation === 'siso') {
+        jitterSigma = 16.0; // severe constellation blur
+      } else if (State.mitigation === 'rake' || State.mitigation === 'beamform') {
+        jitterSigma = 2.4; // tight constellation
+      } else {
+        jitterSigma = 7.0;
+      }
+
+      // Draw scattered IQ constellation dots
+      iqCtx.fillStyle = State.losBlocked && State.mitigation === 'siso' ? '#ef4444' : '#38bdf8';
+      const dotsPerCluster = 14;
+
+      centers.forEach(([x0, y0]) => {
+        for (let i = 0; i < dotsPerCluster; i++) {
+          const rx = (Math.random() - 0.5) * jitterSigma * 2;
+          const ry = (Math.random() - 0.5) * jitterSigma * 2;
+          iqCtx.fillRect(x0 + rx, y0 + ry, 1.5, 1.5);
+        }
+      });
+    }
+
+    // --------------------------------------------------------------------------
+    // PHYSICAL LINK BUDGET & MULTIPATH COMPUTATION
+    // --------------------------------------------------------------------------
+    function computeLinkPhysics() {
+      // 1. Rician K-Factor (Ratio of LOS direct power to diffused multipath ground bounce)
+      // When rover is on high rim with clear LOS: K is high (+12 to +16 dB).
+      // When shadowed in crater: LOS goes to zero, collapsing to Rayleigh fading (K <= -6 dB).
+      let rawK = 14.0 - (State.roverPosPercent * 0.25);
+      if (State.losBlocked) {
+        rawK = -8.5; // Rayleigh conditions
+      }
+
+      // 2. Mitigation algorithm adjustments
+      if (State.mitigation === 'beamform') {
+        // Phased array steering gives +4 dB gain to direct path
+        rawK += 4.5;
+      } else if (State.mitigation === 'rake') {
+        // Constructive Rake aligns reflections
+        rawK += 6.0;
+      }
+
+      State.kFactorDb = Math.round(rawK * 10) / 10;
+
+      // 3. RMS Delay Spread (nanoseconds)
+      // Terrain scattering profile expands as rover drops into crater bowl
+      State.delaySpreadNs = Math.round(110 + (State.roverPosPercent * 1.8) + (State.roverWobbleDeg * 2.2));
+
+      // 4. Coherence Bandwidth = 1 / (5 * tau_rms)
+      const cohBwMHz = (1000 / (5 * State.delaySpreadNs)).toFixed(2);
+      document.getElementById('metric-coherence').textContent = `${cohBwMHz} MHz`;
+
+      // 5. CNR (Carrier to Noise plus Interference)
+      let baseCNR = 22.0 - (State.roverPosPercent * 0.15);
+      if (State.losBlocked) {
+        baseCNR -= (State.mitigation === 'siso' ? 19.0 : 4.0);
+      }
+
+      if (State.mitigation === 'beamform') baseCNR += 3.5;
+      if (State.mitigation === 'rake') baseCNR += 5.2;
+
+      State.cnrDb = Math.max(-4.0, Math.round(baseCNR * 10) / 10);
+
+      // 6. Rover Wobble Doppler Flutter Rate
+      // Doppler = (v / lambda) * cos(theta), where mast wobble speed induces fast fading
+      const freqFactor = State.rfBand === 'Ka' ? 6.5 : (State.rfBand === 'S' ? 1.0 : 0.25);
+      State.dopplerHz = Math.round((4.0 + State.roverWobbleDeg * 1.1) * freqFactor * 10) / 10;
+
+      // 7. EVM & Bit Error Rate
+      State.evmPercent = Math.min(48, Math.max(1.8, Math.round((35 - State.cnrDb) * 0.7 * 10) / 10));
+
+      updateHUDDisplays();
+    }
+
+    function updateHUDDisplays() {
+      // Rician K-Factor display
+      const elK = document.getElementById('metric-kfactor');
+      const elKState = document.getElementById('kfactor-state');
+      elK.textContent = (State.kFactorDb >= 0 ? `+${State.kFactorDb}` : `${State.kFactorDb}`);
+
+      if (State.kFactorDb >= 8) {
+        elK.className = 'text-lg font-bold font-mono text-emerald-400';
+        elKState.textContent = 'STRONG RICIAN';
+        elKState.className = 'text-emerald-400 font-semibold';
+      } else if (State.kFactorDb >= 0) {
+        elK.className = 'text-lg font-bold font-mono text-amber-400';
+        elKState.textContent = 'MULTIPATH FADE';
+        elKState.className = 'text-amber-400 font-semibold';
+      } else {
+        elK.className = 'text-lg font-bold font-mono text-red-500 animate-pulse';
+        elKState.textContent = 'RAYLEIGH NULL';
+        elKState.className = 'text-red-500 font-semibold';
+      }
+
+      // Delay Spread
+      document.getElementById('metric-delayspread').textContent = State.delaySpreadNs;
+
+      // CNR Bar & Value
+      const elCNR = document.getElementById('metric-cnr');
+      const barCNR = document.getElementById('bar-cnr');
+      elCNR.textContent = (State.cnrDb >= 0 ? `+${State.cnrDb}` : `${State.cnrDb}`);
+
+      if (State.cnrDb >= 12) {
+        elCNR.className = 'text-lg font-bold font-mono text-emerald-400';
+        barCNR.className = 'bg-emerald-400 h-full rounded-full transition-all duration-300';
+      } else if (State.cnrDb >= 5) {
+        elCNR.className = 'text-lg font-bold font-mono text-amber-400';
+        barCNR.className = 'bg-amber-400 h-full rounded-full transition-all duration-300';
+      } else {
+        elCNR.className = 'text-lg font-bold font-mono text-red-500 animate-pulse';
+        barCNR.className = 'bg-red-500 h-full rounded-full transition-all duration-300';
+      }
+      barCNR.style.width = `${Math.max(5, Math.min(100, (State.cnrDb + 6) * 4))}%`;
+
+      // Doppler
+      document.getElementById('metric-doppler').textContent = State.dopplerHz;
+
+      // EVM
+      document.getElementById('val-evm').textContent = `${State.evmPercent}% EVM`;
+
+      // Footer Banner Text
+      const footerText = document.getElementById('footer-status-text');
+      if (State.losBlocked && State.mitigation === 'siso') {
+        footerText.textContent = `[LINK COLLAPSE] Crater rim line-of-sight occlusion detected. Destructive ground reflections dropped CNR to ${State.cnrDb} dB. Packets lost!`;
+      } else if (State.mitigation === 'rake') {
+        footerText.textContent = `[CONSTRUCTIVE RAKE] Maximum Ratio Combining (MRC) coherently aligned 2 regolith reflection taps, boosting link margin by +5.2 dB.`;
+      } else if (State.mitigation === 'beamform') {
+        footerText.textContent = `[NEURAL BEAMFORMING] Dynamic phased array weights locked boresight on Gateway despite rover ±${State.roverWobbleDeg}° terrain wobble.`;
+      } else if (State.mitigation === 'dtn') {
+        footerText.textContent = `[DTN HANDOVER ACTIVE] Anticipated crater blockage. Pre-buffered 480 MB science telemetry bundles into local delay-tolerant storage.`;
+      } else {
+        footerText.textContent = `[NOMINAL] Rician link tracking nominal. Direct line-of-sight elevation at ${State.elevationDeg.toFixed(1)}°.`;
+      }
+    }
+
+    // --------------------------------------------------------------------------
+    // USER CONTROLS & ALGORITHM SELECTION
+    // --------------------------------------------------------------------------
+    function setMitigationAlgorithm(alg) {
+      State.mitigation = alg;
+
+      ['siso', 'beamform', 'rake', 'dtn'].forEach(a => {
+        const el = document.getElementById(`alg-${a}`);
+        if (a === alg) {
+          el.className = 'w-full p-2.5 rounded-lg border border-lunar-accent bg-sky-950/50 text-left transition flex flex-col glow-cyan';
+        } else {
+          el.className = 'w-full p-2.5 rounded-lg border border-lunar-border bg-black/40 hover:border-slate-400 text-left transition flex flex-col';
+        }
+      });
+
+      if (alg === 'siso') {
+        emitLog('[BASELINE SISO] Single-antenna mode engaged. High sensitivity to crater shadowing and regolith phase cancellations.');
+      } else if (alg === 'beamform') {
+        playChirp([440, 660, 880]);
+        emitLog('[AI-AESA] Neural phased array tracking active. Compensating rover chassis wobble in real-time.');
+      } else if (alg === 'rake') {
+        playChirp([520, 780, 1040]);
+        emitLog('[RAKE COMBINER] Constructive multipath synthesis enabled. Transforming ground bounces into signal energy.');
+      } else if (alg === 'dtn') {
+        playChirp([600, 800, 1200]);
+        emitLog('[DTN PREDICT] Orbital crater blockage predictor initialized. Delay-Tolerant custody transfers active.');
+      }
+
+      computeLinkPhysics();
+    }
+
+    function setRFBand(band) {
+      State.rfBand = band;
+
+      ['uhf', 's', 'ka'].forEach(b => {
+        const el = document.getElementById(`btn-band-${b}`);
+        if (b === band.toLowerCase()) {
+          el.className = 'p-1.5 rounded border border-lunar-accent bg-sky-950/60 text-center transition glow-cyan';
+        } else {
+          el.className = 'p-1.5 rounded border border-lunar-border bg-black/40 hover:border-slate-500 text-center transition';
+        }
+      });
+
+      emitLog(`[RF BAND SWITCH] Switched carrier frequency to ${band}-Band.`);
+      computeLinkPhysics();
+      updateAudioTone();
+    }
+
+    function toggleRoverDrive() {
+      State.isDriving = !State.isDriving;
+      const label = document.getElementById('drive-label');
+      const icon = document.getElementById('drive-icon');
+
+      if (State.isDriving) {
+        label.textContent = 'Halt Rover';
+        icon.setAttribute('data-lucide', 'pause');
+        emitLog('[LTV TRAVERSE] Rover automated traverse along Shackleton Crater rim initiated.');
+      } else {
+        label.textContent = 'Auto-Traverse Rover';
+        icon.setAttribute('data-lucide', 'play');
+        emitLog('[LTV HALT] Rover parked at current terrain coordinates.');
+      }
+      lucide.createIcons();
+    }
+
+    function injectCraterDrop() {
+      State.roverPosPercent = 95;
+      document.getElementById('slider-rover-pos').value = 95;
+      document.getElementById('track-pos-label').textContent = 'Deep Crater Floor (100% Shadowed)';
+      emitLog('[TERRAIN EVENT] Rover plunged into deep permanently shadowed crater bowl! Direct line-of-sight collapsed.');
+      playChirp([320, 220, 160]);
+      computeLinkPhysics();
+    }
+
+    function emitLog(msg) {
+      const box = document.getElementById('event-log-box');
+      if (!box) return;
+
+      const timeStr = new Date().toISOString().substring(11, 19);
+      const row = document.createElement('div');
+      row.className = 'flex items-start gap-1.5 border-b border-lunar-border/40 pb-0.5 text-slate-300';
+      row.innerHTML = `<span class="text-slate-500 font-mono">[${timeStr}]</span> <span>${msg}</span>`;
+      box.prepend(row);
+
+      while (box.children.length > 25) {
+        box.removeChild(box.lastChild);
+      }
+    }
+
+    function clearEventLog() {
+      document.getElementById('event-log-box').innerHTML = '';
+    }
+
+    function exportTelemetryReport() {
+      const report = {
+        mission: "NASA Artemis Lunar Surface-to-Orbit Multipath Telemetry",
+        timestamp: new Date().toISOString(),
+        surfaceAsset: "Artemis Lunar Terrain Vehicle (LTV-1)",
+        orbitalRelay: "Lunar Gateway (NRHO)",
+        rfBand: State.rfBand,
+        linkParameters: {
+          elevationAngleDeg: State.elevationDeg,
+          losOccluded: State.losBlocked,
+          ricianKFactorDb: State.kFactorDb,
+          delaySpreadNs: State.delaySpreadNs,
+          cnrDb: State.cnrDb,
+          dopplerFlutterHz: State.dopplerHz,
+          evmPercent: State.evmPercent
+        },
+        mitigationEngine: {
+          selectedAlgorithm: State.mitigation,
+          status: State.losBlocked && State.mitigation === 'siso' ? "CARRIER_LOST" : "LINK_PRESERVED"
+        }
+      };
+
+      const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Artemis_Lunar_Multipath_Log_${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function setupInputListeners() {
+      // Rover Position Slider
+      const sliderPos = document.getElementById('slider-rover-pos');
+      sliderPos.addEventListener('input', e => {
+        State.roverPosPercent = parseFloat(e.target.value);
+        let label = 'Rim Peak (LOS Clear)';
+        if (State.roverPosPercent > 70) label = 'Deep Shadow Floor (Occluded)';
+        else if (State.roverPosPercent > 35) label = 'Crater Mid-Slope (Multipath Active)';
+        document.getElementById('track-pos-label').textContent = label;
+        computeLinkPhysics();
+      });
+
+      // Wobble Slider
+      const sliderWobble = document.getElementById('slider-wobble');
+      sliderWobble.addEventListener('input', e => {
+        State.roverWobbleDeg = parseFloat(e.target.value);
+        let wLabel = 'Low';
+        if (State.roverWobbleDeg > 20) wLabel = 'Extreme Rock Wobble';
+        else if (State.roverWobbleDeg > 8) wLabel = 'Moderate Traverse';
+        document.getElementById('val-wobble-disp').textContent = `${wLabel} (±${State.roverWobbleDeg}°)`;
+        computeLinkPhysics();
+      });
+    }
+
+    // --------------------------------------------------------------------------
+    // MAIN SIMULATION ANIMATION LOOP
+    // --------------------------------------------------------------------------
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Automated Rover Traversal Drive
+      if (State.isDriving) {
+        State.roverPosPercent += State.driveSpeed * State.driveDirection;
+        if (State.roverPosPercent >= 95) {
+          State.roverPosPercent = 95;
+          State.driveDirection = -1; // reverse
+        } else if (State.roverPosPercent <= 5) {
+          State.roverPosPercent = 5;
+          State.driveDirection = 1; // forward
+        }
+        document.getElementById('slider-rover-pos').value = State.roverPosPercent;
+        computeLinkPhysics();
+      }
+
+      // Update 3D geometry & rays
+      updateRoverPositionAndRays();
+
+      // Render 3D Scene
+      renderer.render(scene, camera);
+
+      // Render 2D CIR and Constellation Graphs
+      renderCIR();
+      renderIQConstellation();
+
+      // Audio continuous modulation
+      updateAudioTone();
+    }
+
+    // Startup
+    window.addEventListener('load', () => {
+      init3D();
+      resizeCanvases();
+      setupInputListeners();
+      computeLinkPhysics();
+
+      // Seed initial telemetry lines
+      emitLog('[INITIALIZED] NASA Artemis Surface-to-Orbit Multipath Simulator online.');
+      emitLog('[CALIBRATION] Shackleton Crater South Pole terrain mesh loaded (ε_r = 2.8, tan δ = 0.006).');
+      emitLog('[LOCK] S-Band carrier locked: LTV Rover -> Lunar Gateway NRHO.');
+
+      // Start loop
+      animate();
+    });
+  </script>
+</body>
+</html>
